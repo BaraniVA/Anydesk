@@ -4,8 +4,21 @@ version = "0.1.0"
 description = "A lightweight remote desktop application using Tauri, Axum, screenshots, and enigo."
 authors = ["Antigravity"]
 edition = "2021"
+default-run = "remotelink"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "remotelink"
+path = "src/lib.rs"
+
+[[bin]]
+name = "remotelink"
+path = "src/main.rs"
+
+[[bin]]
+name = "remotelink-server"
+path = "src/bin/server_main.rs"
+
 
 
 

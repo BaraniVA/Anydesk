@@ -23,7 +23,7 @@
   <!-- Main App Viewport -->
   <main id="app-container">
     
-    <!-- 1. HOME SCREEN -->
+    <!-- 1. HOME SCREEN (UltraViewer Architecture) -->
     <section id="screen-home" class="screen-view active">
       <div class="welcome-header">
         <h1>Establish Connection</h1>
@@ -31,60 +31,86 @@
       </div>
 
       <div class="roles-grid">
-        <!-- Host Card -->
+        <!-- Allow Remote Control (Host Info) -->
         <div class="role-card">
-          <div class="role-badge">HOST MODE</div>
-          <h2>Share Screen</h2>
-          <p>Allow authorized remote clients to view your primary screen and control input devices.</p>
-          <button id="btn-start-hosting" class="btn primary">Start Hosting</button>
+          <div class="role-badge">ALLOW REMOTE CONTROL</div>
+          <h2>Your Credentials</h2>
+          <p class="card-instruction">Please tell your partner the following ID and Password if you would like to allow remote control.</p>
+          
+          <div class="control-field-group">
+            <div class="control-field">
+              <label>Your ID</label>
+              <div class="field-value-container">
+                <span id="display-my-id" class="mono-display loading-placeholder">Connecting...</span>
+                <button id="btn-copy-my-id" class="btn-icon-small" title="Copy ID">
+                  <svg viewBox="0 0 24 24" class="icon-svg-small"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                </button>
+              </div>
+            </div>
+            
+            <div class="control-field">
+              <label>Password</label>
+              <div class="field-value-container">
+                <span id="display-my-password" class="mono-display loading-placeholder">Connecting...</span>
+                <button id="btn-refresh-password" class="btn-icon-small" title="Generate New Password">
+                  <svg viewBox="0 0 24 24" class="icon-svg-small"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="connection-status" id="connection-status">
+            <span class="status-dot connecting" id="status-dot"></span>
+            <span id="status-text">Connecting to server...</span>
+          </div>
+          
+          <div class="unattended-group">
+            <label class="checkbox-container">
+              <input type="checkbox" id="check-unattended" checked disabled>
+              <span class="checkmark"></span>
+              Unattended access enabled
+            </label>
+          </div>
         </div>
 
-        <!-- Viewer Card -->
+        <!-- Control a Remote Computer (Viewer Input) -->
         <div class="role-card">
-          <div class="role-badge">VIEWER MODE</div>
-          <h2>View & Control</h2>
-          <p>Establish session with a remote host by entering their LAN IP address or Serveo public URL.</p>
-          <div class="connect-input-group">
-            <input type="text" id="input-connect-address" placeholder="e.g. 192.168.1.5:3000" />
-            <button id="btn-connect-remote" class="btn success">Connect →</button>
+          <div class="role-badge">CONTROL REMOTE COMPUTER</div>
+          <h2>Connect to Partner</h2>
+          <p class="card-instruction">Please enter your partner's ID to remote control your partner's computer.</p>
+          
+          <div class="control-field-group">
+            <div class="control-field">
+              <label for="input-partner-id">Partner ID</label>
+              <input type="text" id="input-partner-id" placeholder="Enter ID or Tunnel address" maxlength="100" />
+            </div>
+            
+            <div class="control-field">
+              <label for="input-partner-password">Password</label>
+              <input type="text" id="input-partner-password" placeholder="Enter 5-digit password" maxlength="10" />
+            </div>
+          </div>
+          
+          <div class="connect-action-container">
+            <button id="btn-connect-partner" class="btn primary large-btn">
+              <span>➔</span> Connect to partner
+            </button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 2. HOST WAITING SCREEN -->
-    <section id="screen-host-waiting" class="screen-view">
-      <div class="status-header">
-        <span class="pulse-dot"></span>
-        <h2>Signaling Server Running</h2>
-      </div>
-
-      <div class="address-container">
-        <label>Share this address with the viewer:</label>
-        <div class="address-box">
-          <span id="display-host-address" class="mono-address">192.168.1.5:3000</span>
-          <button id="btn-copy-address" class="btn-icon" title="Copy Address">
-            <svg viewBox="0 0 24 24" class="icon-svg"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="tunnel-container">
-        <h3>Internet Access (Different Networks)</h3>
-        <p>If the viewer is not on your local network, run this tunnel script in your terminal to generate a free public URL:</p>
-        <div class="code-box">
-          <code class="mono-code">ssh -R 80:localhost:3000 serveo.net</code>
-          <button id="btn-copy-tunnel-cmd" class="btn-icon" title="Copy Command">
-            <svg viewBox="0 0 24 24" class="icon-svg"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-          </button>
-        </div>
-        <p class="hint">After starting the tunnel, copy the URL provided by serveo.net (e.g. abc.serveo.net) and give it to the viewer.</p>
-      </div>
-
-      <div class="waiting-footer">
-        <button id="btn-stop-hosting" class="btn danger">Stop Hosting</button>
-      </div>
+    <!-- Hidden dummy elements to prevent JS errors with legacy variables -->
+    <section id="screen-host-waiting" style="display: none !important;">
+      <button id="btn-start-hosting"></button>
+      <span id="display-host-address"></span>
+      <button id="btn-copy-address"></button>
+      <button id="btn-copy-tunnel-cmd"></button>
+      <button id="btn-stop-hosting"></button>
+      <input type="text" id="input-connect-address" />
+      <button id="btn-connect-remote"></button>
     </section>
+
 
     <!-- 3. ACTIVE SESSION SCREEN -->
     <section id="screen-active-session" class="screen-view">

@@ -195,6 +195,12 @@
           "markdownDescription": "Allows retrieving screen dimensions"
         },
         {
+          "description": "Allows retrieving Cloudflare tunnel information",
+          "type": "string",
+          "const": "allow-get-tunnel-info",
+          "markdownDescription": "Allows retrieving Cloudflare tunnel information"
+        },
+        {
           "description": "Allows keyboard input simulation",
           "type": "string",
           "const": "allow-inject-key",

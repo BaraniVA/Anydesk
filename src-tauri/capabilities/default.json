@@ -19,6 +19,7 @@
     "allow-capture-frame",
     "allow-get-screen-size",
     "allow-inject-mouse",
-    "allow-inject-key"
+    "allow-inject-key",
+    "allow-get-tunnel-info"
   ]
 }

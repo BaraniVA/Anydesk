@@ -1,21 +1,40 @@
-const { invoke } = window.__TAURI__.core;
-const { getCurrentWindow } = window.__TAURI__.window;
+// Safe wrappers for Tauri APIs to prevent script crashes when run in standard browsers or before injection
+const hasTauri = typeof window !== "undefined" && window.__TAURI__ !== undefined;
+const invoke = hasTauri ? window.__TAURI__.core.invoke : async (cmd, args) => {
+  console.warn(`[Browser Mock] invoke called for: ${cmd}`, args);
+  return null;
+};
+const getCurrentWindow = hasTauri ? window.__TAURI__.window.getCurrentWindow : () => ({
+  minimize: async () => {},
+  toggleMaximize: async () => {},
+  close: async () => {},
+  startDragging: async () => {},
+});
 
 // --- Window Dragging and Controls ---
 const appWindow = getCurrentWindow();
-document.getElementById("titlebar-minimize").addEventListener("click", () => appWindow.minimize());
-document.getElementById("titlebar-maximize").addEventListener("click", () => appWindow.toggleMaximize());
-document.getElementById("titlebar-close").addEventListener("click", () => appWindow.close());
+const btnMin = document.getElementById("titlebar-minimize");
+const btnMax = document.getElementById("titlebar-maximize");
+const btnClose = document.getElementById("titlebar-close");
+const titleBar = document.getElementById("titlebar");
 
-document.getElementById("titlebar").addEventListener("mousedown", (e) => {
-  if (!e.target.closest(".titlebar-btn")) {
-    appWindow.startDragging();
-  }
-});
+if (btnMin) btnMin.addEventListener("click", () => appWindow.minimize());
+if (btnMax) btnMax.addEventListener("click", () => appWindow.toggleMaximize());
+if (btnClose) btnClose.addEventListener("click", () => appWindow.close());
+if (titleBar) {
+  titleBar.addEventListener("mousedown", (e) => {
+    if (!e.target.closest(".titlebar-btn")) {
+      appWindow.startDragging();
+    }
+  });
+}
+
 
 // --- State Variables ---
 let ws = null;                  // Signaling WebSocket
 let myId = null;                // 9-digit client ID
+let myPassword = null;          // Client session password
+let tunnelSubdomain = null;     // Subdomain of the active cloud tunnel
 let peerId = null;              // Remote peer ID
 let pc = null;                  // RTCPeerConnection
 let streamChannel = null;       // DataChannel for screen frames
@@ -127,217 +146,345 @@ btnCopyTunnelCmd.addEventListener("click", async () => {
   }
 });
 
-// --- Host Mode: Start Signaling ---
-btnStartHosting.addEventListener("click", async () => {
-  try {
-    isHost = true;
-    showToast("Initializing signaling server...", "info");
-    const address = await invoke("start_server");
-    displayHostAddress.textContent = address;
-    showScreen("screen-host-waiting");
+// --- Central Signaling Connection ---
+// ─── SIGNALING SERVER URL ───────────────────────────────────────────
+// After deploying signaling-server/ to Render.com, paste your URL below:
+//   Example: "wss://remotelink-signaling.onrender.com"
+// Leave empty to use the local embedded server (same-network only).
+const REMOTE_SIGNALING_URL = "";
+const LOCAL_SIGNALING_URL = "ws://127.0.0.1:3000";
+const SIGNALING_URL = REMOTE_SIGNALING_URL || LOCAL_SIGNALING_URL;
 
-    // Extract the port from the returned address (e.g. "192.168.1.5:3000" -> 3000)
-    const port = address.split(":").pop() || "3000";
+// For local server, try multiple ports in case 3000 is in use
+const LOCAL_PORTS = [3000, 3001, 3002, 3003, 3004];
+let currentPortIndex = 0;
+let signalingConnected = false;
 
-    // Give the server a moment to be fully ready before connecting
-    await new Promise(r => setTimeout(r, 300));
+function updateConnectionStatus(state, message) {
+  const dot = document.getElementById("status-dot");
+  const text = document.getElementById("status-text");
+  const idEl = document.getElementById("display-my-id");
+  const pwdEl = document.getElementById("display-my-password");
+  if (!dot || !text) return;
+  
+  dot.className = "status-dot " + state;
+  text.textContent = message;
+  
+  if (state === "connecting") {
+    idEl.textContent = "Connecting...";
+    pwdEl.textContent = "Connecting...";
+    idEl.classList.add("loading-placeholder");
+    pwdEl.classList.add("loading-placeholder");
+  } else if (state === "error") {
+    idEl.textContent = "Not available";
+    pwdEl.textContent = "Not available";
+    idEl.classList.add("loading-placeholder");
+    pwdEl.classList.add("loading-placeholder");
+  }
+  // "connected" state is handled by the init message handler
+}
 
-    // Connect signaling WebSocket locally using the actual bound port
-    ws = new WebSocket(`ws://127.0.0.1:${port}`);
-    ws.onopen = () => {
-      showToast("Signaling server ready. Awaiting viewer...", "success");
-    };
-    ws.onmessage = handleSignalingMessage;
-    ws.onerror = (e) => {
-      console.error("Host WS error:", e);
-      showToast("Signaling server connection error", "error");
-      stopHosting();
-    };
-    ws.onclose = (e) => {
-      console.log("Host WS closed");
-      if (!screenActiveSession.classList.contains("active")) {
-        showToast("Signaling connection closed", "error");
-        stopHosting();
+function getSignalingUrl() {
+  if (REMOTE_SIGNALING_URL) return REMOTE_SIGNALING_URL;
+  return `ws://127.0.0.1:${LOCAL_PORTS[currentPortIndex]}`;
+}
+
+function connectSignaling() {
+  const url = getSignalingUrl();
+  console.log("Connecting to signaling server:", url);
+  updateConnectionStatus("connecting", `Connecting to server...`);
+  
+  ws = new WebSocket(url);
+  
+  ws.onopen = () => {
+    console.log("Connected to signaling server at", url);
+    signalingConnected = true;
+    currentPortIndex = 0; // reset for next time
+    updateConnectionStatus("connected", "Connected to server");
+  };
+  
+  ws.onmessage = (event) => {
+    handleSignalingMessage(event);
+  };
+  
+  ws.onerror = (e) => {
+    console.error("Signaling server connection error:", e);
+  };
+  
+  ws.onclose = (e) => {
+    console.log("Signaling connection closed.");
+    const wasConnected = signalingConnected;
+    signalingConnected = false;
+    
+    // If using local server and never connected, try next port
+    if (!REMOTE_SIGNALING_URL && !wasConnected) {
+      currentPortIndex++;
+      if (currentPortIndex < LOCAL_PORTS.length) {
+        console.log(`Port ${LOCAL_PORTS[currentPortIndex - 1]} failed, trying port ${LOCAL_PORTS[currentPortIndex]}...`);
+        updateConnectionStatus("connecting", `Trying port ${LOCAL_PORTS[currentPortIndex]}...`);
+        setTimeout(connectSignaling, 500);
+        return;
       }
-    };
+      // All ports exhausted — reset and retry from port 3000
+      currentPortIndex = 0;
+      updateConnectionStatus("error", "Server not reachable — retrying...");
+      setTimeout(connectSignaling, 5000);
+    } else {
+      // Was connected but lost connection, or using remote server
+      updateConnectionStatus("connecting", "Reconnecting...");
+      setTimeout(connectSignaling, 3000);
+    }
+  };
+}
+
+// Call on startup
+connectSignaling();
+
+// --- Cloudflare Tunnel Support ---
+let tunnelActive = false;
+
+async function checkTunnelInfo() {
+  try {
+    const info = await invoke("get_tunnel_info");
+    if (!info) return;
+
+    const statusText = document.getElementById("status-text");
+    const statusDot = document.getElementById("status-dot");
+    const idEl = document.getElementById("display-my-id");
+
+    if (info.status === "connected" && info.subdomain) {
+      if (!tunnelActive) {
+        tunnelActive = true;
+        showToast("Secure cloud tunnel established!", "success");
+      }
+      tunnelSubdomain = info.subdomain;
+      idEl.textContent = info.subdomain;
+      idEl.classList.remove("loading-placeholder");
+      
+      if (statusText && statusDot) {
+        statusText.textContent = "Zero-config cloud tunnel ready";
+        statusDot.className = "status-dot connected";
+      }
+    } else {
+      if (tunnelActive) {
+        tunnelActive = false;
+        tunnelSubdomain = null;
+        if (myId) {
+          idEl.textContent = myId.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3");
+        } else {
+          idEl.textContent = "Connecting...";
+          idEl.classList.add("loading-placeholder");
+        }
+      }
+      if (info.status === "downloading_cloudflared") {
+        if (statusText && statusDot) {
+          statusText.textContent = "Zero-config: downloading cloudflared...";
+          statusDot.className = "status-dot connecting";
+        }
+      } else if (info.status === "starting_tunnel") {
+        if (statusText && statusDot) {
+          statusText.textContent = "Zero-config: starting tunnel...";
+          statusDot.className = "status-dot connecting";
+        }
+      } else if (info.status.startsWith("download_failed")) {
+        if (statusText && statusDot) {
+          statusText.textContent = "Download failed. Please check internet connection.";
+          statusDot.className = "status-dot error";
+        }
+      } else if (info.status.startsWith("spawn_failed")) {
+        if (statusText && statusDot) {
+          statusText.textContent = "Failed to start tunnel daemon.";
+          statusDot.className = "status-dot error";
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to query tunnel info:", e);
+  }
+}
+
+// Check tunnel info every 1.5 seconds
+setInterval(checkTunnelInfo, 1500);
+
+
+// --- Copy & Refresh Handlers ---
+const btnCopyMyId = document.getElementById("btn-copy-my-id");
+const btnRefreshPassword = document.getElementById("btn-refresh-password");
+const btnConnectPartner = document.getElementById("btn-connect-partner");
+const inputPartnerId = document.getElementById("input-partner-id");
+const inputPartnerPassword = document.getElementById("input-partner-password");
+
+btnCopyMyId.addEventListener("click", async () => {
+  const text = document.getElementById("display-my-id").textContent;
+  if (!text || text === "--- --- ---" || text.includes("Connecting") || text.includes("available")) return;
+  try {
+    await invoke("plugin:clipboard-manager|write_text", { text });
+    showToast("Your Partner ID copied to clipboard", "success");
   } catch (err) {
-    console.error("start_server invoke error:", err);
-    showToast(`Failed to start server: ${err}`, "error");
-    isHost = false;
+    showToast("Failed to copy ID", "error");
   }
 });
 
-btnStopHosting.addEventListener("click", stopHosting);
-btnHostDisconnect.addEventListener("click", disconnectSession);
-
-async function stopHosting() {
-  cleanupSession();
-  try {
-    await invoke("stop_server");
-  } catch (e) {}
-  showScreen("screen-home");
-  showToast("Hosting stopped", "info");
-}
-
-// --- Viewer Mode: Connect to Host ---
-btnConnectRemote.addEventListener("click", () => {
-  const rawAddr = inputConnectAddress.value.trim();
-  if (!rawAddr) {
-    showToast("Please enter a valid host address", "warn");
+btnRefreshPassword.addEventListener("click", () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showToast("Not connected to signaling server", "error");
     return;
   }
-  connectToHost(rawAddr);
+  // Generate a random 5-digit password locally and register it
+  const newPwd = Math.floor(10000 + Math.random() * 90000).toString();
+  ws.send(JSON.stringify({
+    type: "update-password",
+    password: newPwd
+  }));
+});
+
+btnConnectPartner.addEventListener("click", () => {
+  const rawId = inputPartnerId.value.trim();
+  const pwd = inputPartnerPassword.value.trim();
+  
+  if (!rawId) {
+    showToast("Please enter your partner's ID", "warn");
+    return;
+  }
+  if (!pwd) {
+    showToast("Please enter your partner's password", "warn");
+    return;
+  }
+  
+  // Format target ID by stripping spaces
+  let targetId = rawId.replace(/\s+/g, "").toLowerCase();
+  targetId = targetId.replace(/^(https?:\/\/|wss?:\/\/)/, "");
+  targetId = targetId.split('/')[0];
+  
+  const isTunnel = targetId.includes("trycloudflare.com") || !/^\d+$/.test(targetId);
+  
+  if (isTunnel) {
+    let tunnelHost = targetId;
+    if (!tunnelHost.includes(".")) {
+      tunnelHost = `${tunnelHost}.trycloudflare.com`;
+    }
+    const tunnelWsUrl = `wss://${tunnelHost}`;
+    
+    showToast(`Connecting via secure tunnel: ${tunnelHost}...`, "info");
+    btnConnectPartner.disabled = true;
+    
+    // Close current ws if open
+    if (ws) {
+      ws.onclose = null; // prevent auto-reconnect trigger
+      ws.close();
+    }
+    
+    ws = new WebSocket(tunnelWsUrl);
+    
+    ws.onopen = () => {
+      console.log("Connected to partner's tunnel signaling server at", tunnelWsUrl);
+      isHost = false; // Viewer mode
+      ws.send(JSON.stringify({
+        type: "connect-request",
+        to: "host",
+        password: pwd
+      }));
+    };
+    
+    ws.onmessage = (event) => {
+      handleSignalingMessage(event);
+    };
+    
+    ws.onerror = (e) => {
+      console.error("Tunnel signaling connection error:", e);
+      showToast("Tunnel connection failed or offline", "error");
+      btnConnectPartner.disabled = false;
+      connectSignaling(); // fallback/reconnect to local/default
+    };
+    
+    ws.onclose = (e) => {
+      console.log("Tunnel connection closed.");
+      btnConnectPartner.disabled = false;
+      connectSignaling(); // fallback/reconnect
+    };
+  } else {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      showToast("Not connected to signaling server", "error");
+      return;
+    }
+    
+    showToast("Authenticating connection with partner...", "info");
+    btnConnectPartner.disabled = true;
+    
+    isHost = false; // Viewer mode
+    ws.send(JSON.stringify({
+      type: "connect-request",
+      to: targetId,
+      password: pwd
+    }));
+  }
 });
 
 btnViewerDisconnect.addEventListener("click", disconnectSession);
-
-function connectToHost(address) {
-  isHost = false;
-  showToast("Connecting to signaling server...", "info");
-
-  // Normalize the WebSocket URL
-  let wsUrl = address.trim();
-  // Strip any http/https prefix
-  wsUrl = wsUrl.replace(/^https?:\/\//, "");
-  // Strip trailing slash
-  wsUrl = wsUrl.replace(/\/+$/, "");
-  
-  // If no port specified, default to 3000
-  if (!wsUrl.includes(":") || wsUrl.split(":").pop().length > 5) {
-    wsUrl = wsUrl + ":3000";
-  }
-  
-  // Prepend ws:// if not already present
-  if (!wsUrl.startsWith("ws://") && !wsUrl.startsWith("wss://")) {
-    wsUrl = "ws://" + wsUrl;
-  }
-
-  console.log("Connecting to WS URL:", wsUrl);
-
-  try {
-    ws = new WebSocket(wsUrl);
-    ws.onopen = () => {
-      showToast("Signaling handshake active...", "info");
-    };
-    ws.onmessage = handleSignalingMessage;
-    ws.onerror = (e) => {
-      console.error("Viewer WS error:", e);
-      showToast("Failed to connect to signaling server. Check the IP address and make sure both devices are on the same network.", "error");
-      cleanupSession();
-      showScreen("screen-home");
-    };
-    ws.onclose = (e) => {
-      console.log("Viewer WS closed, code:", e.code, "reason:", e.reason);
-      if (!screenActiveSession.classList.contains("active")) {
-        showToast("Signaling connection closed", "error");
-        cleanupSession();
-        showScreen("screen-home");
-      }
-    };
-  } catch (err) {
-    console.error("WebSocket construction failed:", err);
-    showToast(`Connection failed: ${err.message}`, "error");
-  }
-}
+btnHostDisconnect.addEventListener("click", disconnectSession);
 
 // --- Signaling Engine ---
 function handleSignalingMessage(event) {
+  console.log("handleSignalingMessage got data:", event.data);
   let data;
   try {
     data = JSON.parse(event.data);
   } catch (e) {
+    console.error("JSON parse error:", e);
     return;
   }
 
   switch (data.type) {
-    case "registered":
+    case "init":
       myId = data.id;
-      showToast(`Registered with signaling ID: ${myId}`, "success");
-      if (!isHost) {
-        // As viewer, immediately request connection from host
-        // The address path does not specify peerId, so we handshake with the server's other connected peer.
-        // Wait, signaling server knows who is connected. But we need to tell host we want connection.
-        // What target ID should we send?
-        // Since axum signaling server stores peers, and normally there are only two peers (host and viewer),
-        // we can broadcast or send connection request to the peer. But how does viewer know host's ID?
-        // The axum server's only other client is the host!
-        // We can search the DashMap or the server can relay.
-        // Wait! In the prompt, the viewer sends:
-        // `{ type: "request-connection", to: "host_peer_id" }`
-        // Wait, does the viewer know the host's peer ID?
-        // Ah! The host's signaling server registers the host. But when viewer connects, the viewer receives its own ID.
-        // How does the viewer know the host's ID to request connection?
-        // Wait, in axum server code, the host connects to `ws://localhost:3000` and the viewer connects to the host's address.
-        // If the viewer sends a request with target "to", how does it get the host's ID?
-        // Actually, on the signaling server, the host was registered first, and the viewer is registered second.
-        // But what if the viewer just sends a message with `to: "host"` or does the signaling server relay it?
-        // Let's check: if there are only two peers in the signaling server's DashMap, the signaling server can relay to the other peer if `to` is not known, OR when the viewer registers, the signaling server knows the only other client is the host!
-        // Wait, the prompt says:
-        // `{ type: "request-connection", to: "987654321" }`
-        // In our server.rs:
-        // `if let Some(to_val) = json_val.get("to").and_then(|v| v.as_str()) { ... lookup target and relay ... }`
-        // How can we obtain the target ID?
-        // Wait! If the viewer doesn't know the host's ID, does the signaling server notify the viewer, or can we have the server relay any message with `to: "host"` or if `to` is empty?
-        // Wait, the viewer can just request the host's ID, or since the host was registered, can the signaling server send the list of IDs?
-        // Actually, there's an even simpler solution:
-        // Since it's a 1-to-1 session, the signaling server has exactly two clients.
-        // If the viewer connects, its ID is registered. The host is already registered.
-        // We can have the viewer send `{ type: "request-connection", to: "host" }` and the server can relay to the ONLY other peer in the DashMap!
-        // Let's check if our server.rs handles this:
-        // In server.rs, we did:
-        // `let target_id = to_val.to_string();`
-        // if `target_id` is `"host"`, the server could find the peer that is NOT the sender and relay to them!
-        // That is brilliant, robust, and requires zero state exchange!
-        // Let's verify: if the target_id is `"host"` or if the target_id does not match any peer, we can relay to the other peer in the DashMap.
-        // Let's look at the server code:
-        // ```rust
-        // match target_id.as_str() {
-        //   _ => {
-        //      // If it doesn't match any key, we can find the first key that is NOT peer_id and relay!
-        //   }
-        // }
-        // ```
-        // Let's implement this relay fallback on the server, or can we just find the other peer on the server?
-        // Yes! Let's make the server find the other peer if the target ID is not found, or specifically if `to` is `"host"`!
-        // Let's double check if we need to modify server.rs.
-        // Yes, we can update server.rs to handle this fallback, making it extremely robust so the connection works even if the viewer doesn't know the host's random 9-digit ID!
-        // Let's see:
-        // In `server.rs`, we do:
-        // ```rust
-        // let mut target_sender = None;
-        // if let Some(sender) = peers.get(&target_id) {
-        //     target_sender = Some(sender.clone());
-        // } else if target_id == "host" || !peers.contains_key(&target_id) {
-        //     // Find the first peer that is NOT peer_id
-        //     for r in peers.iter() {
-        //         if r.key() != &peer_id {
-        //             target_sender = Some(r.value().clone());
-        //             break;
-        //         }
-        //     }
-        // }
-        // ```
-        // This is incredibly robust! It handles the handshake flawlessly. Let's make sure the viewer sends `to: "host"` or similar.
-        // Let's update `server.rs` to include this logic!
-        ws.send(JSON.stringify({ type: "incoming-request", to: "host" }));
+      myPassword = data.password;
+      // Format as "XXX XXX XXX"
+      const formatted = data.id.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3");
+      const idEl = document.getElementById("display-my-id");
+      const pwdEl = document.getElementById("display-my-password");
+      
+      // If tunnel is active and we have the subdomain, show it instead of local ID
+      if (tunnelActive && tunnelSubdomain) {
+        idEl.textContent = tunnelSubdomain;
+      } else {
+        idEl.textContent = formatted;
+      }
+      idEl.classList.remove("loading-placeholder");
+      
+      pwdEl.textContent = data.password;
+      pwdEl.classList.remove("loading-placeholder");
+      updateConnectionStatus("connected", "Connected — credentials ready");
+      showToast("Registered with signaling server", "success");
+      break;
+
+    case "update-password-ack":
+      if (data.success) {
+        myPassword = data.password;
+        document.getElementById("display-my-password").textContent = data.password;
+        showToast("Password updated successfully", "success");
       }
       break;
 
-    case "request-connection":
-    case "incoming-request":
-      tempRequesterId = data.from;
-      requestPeerIdDisp.textContent = data.from;
-      modalIncomingRequest.classList.add("active");
+    case "incoming-session":
+      // Host receives this when a viewer successfully authenticated
+      peerId = data.from;
+      isHost = true;
+      showToast("Partner successfully authenticated. Starting control session...", "success");
+      // Switch screen and prepare connection
+      showScreen("screen-active-session");
+      document.getElementById("host-peer-display").textContent = peerId.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3");
+      startCaptureLoop();
       break;
 
-    case "connection-response":
-      if (data.accepted) {
+    case "connect-response":
+      btnConnectPartner.disabled = false;
+      if (data.success) {
         peerId = data.from;
-        showToast("Connection accepted by host. Creating WebRTC session...", "success");
+        showToast("Authentication successful! Initiating WebRTC...", "success");
         initiateWebRTC();
       } else {
-        showToast("Host denied the connection request.", "error");
-        disconnectSession();
+        showToast(`Connection failed: ${data.error}`, "error");
+        cleanupSession();
       }
       break;
 
@@ -359,45 +506,31 @@ function handleSignalingMessage(event) {
   }
 }
 
-// --- Host Request Actions ---
-btnRequestAccept.addEventListener("click", () => {
-  modalIncomingRequest.classList.remove("active");
-  if (tempRequesterId) {
-    peerId = tempRequesterId;
-    tempRequesterId = null;
-    acceptViewerConnection();
-  }
-});
-
-btnRequestDeny.addEventListener("click", () => {
-  modalIncomingRequest.classList.remove("active");
-  if (tempRequesterId) {
-    ws.send(JSON.stringify({
-      type: "connection-response",
-      to: tempRequesterId,
-      accepted: false
-    }));
-    tempRequesterId = null;
-  }
-});
-
-function acceptViewerConnection() {
-  // Do NOT create the peer connection here – it will be created
-  // in handleWebRTCOffer() when the viewer's SDP offer arrives.
-  // Creating it here and again in handleWebRTCOffer() would overwrite
-  // the first RTCPeerConnection and lose its ondatachannel handler.
-  ws.send(JSON.stringify({
-    type: "connection-response",
-    to: peerId,
-    accepted: true
-  }));
-}
 
 // --- WebRTC Peer Setup ---
 const rtcConfig = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" }
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
+    { urls: "stun:stun.stunprotocol.org:3478" },
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    },
+    {
+      urls: "turn:openrelay.metered.ca:443?transport=tcp",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    }
   ]
 };
 
@@ -502,16 +635,8 @@ function onConnectionOpened() {
   showToast("Session connected directly over WebRTC DataChannel", "success");
   showScreen("screen-active-session");
 
-  // Close signaling socket now that WebRTC is connected
-  if (ws) {
-    ws.onclose = null;
-    ws.onerror = null;
-    ws.close();
-    ws = null;
-  }
-
   if (isHost) {
-    document.getElementById("host-peer-display").textContent = peerId;
+    document.getElementById("host-peer-display").textContent = peerId.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3");
     startCaptureLoop();
   } else {
     startPingLoop();
@@ -573,11 +698,8 @@ function cleanupSession() {
     pc = null;
   }
 
-  if (ws) {
-    ws.onclose = null;
-    ws.onerror = null;
-    ws.close();
-    ws = null;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    connectSignaling();
   }
 
   screenImg.src = "";

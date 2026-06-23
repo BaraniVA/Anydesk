@@ -32,3 +32,9 @@ commands.allow = ["inject_mouse"]
 identifier = "allow-inject-key"
 description = "Allows keyboard input simulation"
 commands.allow = ["inject_key"]
+
+[[permission]]
+identifier = "allow-get-tunnel-info"
+description = "Allows retrieving Cloudflare tunnel information"
+commands.allow = ["get_tunnel_info"]
+
