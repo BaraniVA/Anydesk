@@ -1,0 +1,32 @@
+[package]
+name = "remotelink"
+version = "0.1.0"
+description = "A lightweight remote desktop application using Tauri, Axum, screenshots, and enigo."
+authors = ["Antigravity"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri            = { version = "2", features = ["tray-icon"] }
+tauri-plugin-clipboard-manager = "2"
+axum             = { version = "0.7", features = ["ws"] }
+tokio            = { version = "1", features = ["full"] }
+tower-http       = { version = "0.5", features = ["cors"] }
+screenshots      = "0.8"
+enigo            = { version = "0.2", features = [] }
+serde            = { version = "1", features = ["derive"] }
+serde_json       = "1"
+base64           = "0.22"
+image            = "0.24"
+local-ip-address = "0.6"
+uuid             = { version = "1", features = ["v4"] }
+dashmap          = "5"
+tokio-util       = { version = "0.7", features = ["codec"] }
+futures-util     = "0.3"
+

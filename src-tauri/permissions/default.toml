@@ -1,0 +1,34 @@
+[[permission]]
+identifier = "allow-start-server"
+description = "Allows starting the signaling server"
+commands.allow = ["start_server"]
+
+[[permission]]
+identifier = "allow-stop-server"
+description = "Allows stopping the signaling server"
+commands.allow = ["stop_server"]
+
+[[permission]]
+identifier = "allow-get-local-ip"
+description = "Allows retrieving local IP address"
+commands.allow = ["get_local_ip"]
+
+[[permission]]
+identifier = "allow-capture-frame"
+description = "Allows capturing screen frame"
+commands.allow = ["capture_frame"]
+
+[[permission]]
+identifier = "allow-get-screen-size"
+description = "Allows retrieving screen dimensions"
+commands.allow = ["get_screen_size"]
+
+[[permission]]
+identifier = "allow-inject-mouse"
+description = "Allows mouse input simulation"
+commands.allow = ["inject_mouse"]
+
+[[permission]]
+identifier = "allow-inject-key"
+description = "Allows keyboard input simulation"
+commands.allow = ["inject_key"]

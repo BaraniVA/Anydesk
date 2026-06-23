@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RemoteLink</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Custom Titlebar -->
+  <div id="titlebar" class="titlebar">
+    <div class="titlebar-drag">
+      <span class="logo-icon">◈</span>
+      <span class="logo-text">RemoteLink <span class="version">v0.1.0</span></span>
+    </div>
+    <div class="titlebar-actions">
+      <button id="titlebar-minimize" class="titlebar-btn" title="Minimize">&#9472;</button>
+      <button id="titlebar-maximize" class="titlebar-btn" title="Maximize">&#9744;</button>
+      <button id="titlebar-close" class="titlebar-btn danger" title="Close">&#9587;</button>
+    </div>
+  </div>
+
+  <!-- Main App Viewport -->
+  <main id="app-container">
+    
+    <!-- 1. HOME SCREEN -->
+    <section id="screen-home" class="screen-view active">
+      <div class="welcome-header">
+        <h1>Establish Connection</h1>
+        <p class="subtitle">Secure peer-to-peer screen sharing and remote system input control</p>
+      </div>
+
+      <div class="roles-grid">
+        <!-- Host Card -->
+        <div class="role-card">
+          <div class="role-badge">HOST MODE</div>
+          <h2>Share Screen</h2>
+          <p>Allow authorized remote clients to view your primary screen and control input devices.</p>
+          <button id="btn-start-hosting" class="btn primary">Start Hosting</button>
+        </div>
+
+        <!-- Viewer Card -->
+        <div class="role-card">
+          <div class="role-badge">VIEWER MODE</div>
+          <h2>View & Control</h2>
+          <p>Establish session with a remote host by entering their LAN IP address or Serveo public URL.</p>
+          <div class="connect-input-group">
+            <input type="text" id="input-connect-address" placeholder="e.g. 192.168.1.5:3000" />
+            <button id="btn-connect-remote" class="btn success">Connect →</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. HOST WAITING SCREEN -->
+    <section id="screen-host-waiting" class="screen-view">
+      <div class="status-header">
+        <span class="pulse-dot"></span>
+        <h2>Signaling Server Running</h2>
+      </div>
+
+      <div class="address-container">
+        <label>Share this address with the viewer:</label>
+        <div class="address-box">
+          <span id="display-host-address" class="mono-address">192.168.1.5:3000</span>
+          <button id="btn-copy-address" class="btn-icon" title="Copy Address">
+            <svg viewBox="0 0 24 24" class="icon-svg"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="tunnel-container">
+        <h3>Internet Access (Different Networks)</h3>
+        <p>If the viewer is not on your local network, run this tunnel script in your terminal to generate a free public URL:</p>
+        <div class="code-box">
+          <code class="mono-code">ssh -R 80:localhost:3000 serveo.net</code>
+          <button id="btn-copy-tunnel-cmd" class="btn-icon" title="Copy Command">
+            <svg viewBox="0 0 24 24" class="icon-svg"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          </button>
+        </div>
+        <p class="hint">After starting the tunnel, copy the URL provided by serveo.net (e.g. abc.serveo.net) and give it to the viewer.</p>
+      </div>
+
+      <div class="waiting-footer">
+        <button id="btn-stop-hosting" class="btn danger">Stop Hosting</button>
+      </div>
+    </section>
+
+    <!-- 3. ACTIVE SESSION SCREEN -->
+    <section id="screen-active-session" class="screen-view">
+      
+      <!-- Host Active View Controls -->
+      <div id="host-controls" class="session-bar host-only">
+        <div class="session-info">
+          <span class="status-badge success">● HOSTING</span>
+          <span class="session-peer-id">Viewer: <span id="host-peer-display" class="mono">...</span></span>
+        </div>
+        <div class="session-actions">
+          <button id="btn-host-chat" class="btn surface-btn">💬 Chat <span id="host-chat-badge" class="badge"></span></button>
+          <button id="btn-host-disconnect" class="btn danger">End Session</button>
+        </div>
+      </div>
+
+      <!-- Host Active Session Status Info -->
+      <div class="host-session-msg host-only">
+        <svg viewBox="0 0 24 24" style="width: 64px; height: 64px; fill: var(--success); margin-bottom: 20px;">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+        </svg>
+        <h2>Your Desktop is Being Shared</h2>
+        <p>A remote viewer has connected and is viewing your primary display.</p>
+        <div style="background-color: var(--surface2); border: 1px solid var(--border); padding: 12px 24px; border-radius: 4px; display: inline-flex; align-items: center; gap: 8px;">
+          <span class="pulse-dot"></span>
+          <span style="font-family: var(--font-mono); font-weight: 500;">Active Control Session</span>
+        </div>
+      </div>
+
+      <!-- Viewer Frame and Controls -->
+      <div id="viewer-container" class="viewer-only">
+        <!-- Floating Toolbar -->
+        <div id="viewer-toolbar" class="floating-toolbar">
+          <div class="toolbar-drag-handle">⠿</div>
+          <button id="btn-viewer-disconnect" class="btn danger-btn-sm" title="End Session">✕ End</button>
+          <button id="btn-viewer-files" class="btn toolbar-btn" title="File Transfers">📁 Files<span id="viewer-files-badge" class="badge-dot"></span></button>
+          <button id="btn-viewer-chat" class="btn toolbar-btn" title="Text Chat">💬 Chat<span id="viewer-chat-badge" class="badge-dot"></span></button>
+          <div class="latency-indicator">
+            <span id="latency-val" class="mono">--</span>ms
+            <span id="quality-dot" class="quality-dot yellow"></span>
+          </div>
+        </div>
+
+        <!-- Render Target -->
+        <div id="screen-viewport">
+          <img id="screen-img" alt="Remote Screen Frame" />
+        </div>
+      </div>
+
+      <!-- CHAT SIDEBAR (slides in from right) -->
+      <aside id="sidebar-chat" class="sidebar">
+        <div class="sidebar-header">
+          <h3>💬 Chat Feed</h3>
+          <button class="btn-close-sidebar">&times;</button>
+        </div>
+        <div class="sidebar-content chat-messages" id="chat-messages-container">
+          <!-- Messages inserted here -->
+        </div>
+        <div class="sidebar-footer">
+          <form id="chat-form">
+            <input type="text" id="chat-input" placeholder="Type message..." autocomplete="off" />
+            <button type="submit" class="btn primary">Send</button>
+          </form>
+        </div>
+      </aside>
+
+      <!-- FILE TRANSFER SIDEBAR (slides in from right) -->
+      <aside id="sidebar-files" class="sidebar">
+        <div class="sidebar-header">
+          <h3>📁 File Transfers</h3>
+          <button class="btn-close-sidebar">&times;</button>
+        </div>
+        <div class="sidebar-content">
+          <!-- Drag & Drop Zone -->
+          <div id="file-dropzone" class="dropzone">
+            <svg viewBox="0 0 24 24" class="upload-icon"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+            <p>Drag & drop files here to send</p>
+            <span class="file-size-hint">Max chunk size: 256KB</span>
+            <input type="file" id="file-input-raw" style="display: none;" />
+          </div>
+
+          <!-- List of transfers -->
+          <div class="transfer-list-header">Transfers</div>
+          <div id="transfer-list" class="transfer-list">
+            <!-- Progress bars inserted here -->
+          </div>
+        </div>
+      </aside>
+
+    </section>
+  </main>
+
+  <!-- 4. INCOMING CONNECTION MODAL (overlay on host) -->
+  <div id="modal-incoming-request" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Incoming Connection Request</h3>
+      </div>
+      <div class="modal-body">
+        <p>A remote viewer is requesting to control your primary screen.</p>
+        <div class="peer-request-info">
+          ID: <span id="request-peer-id" class="mono">...</span>
+        </div>
+        <p class="modal-warning">Accepting this request will allow the remote user to view your screen and simulate mouse & keyboard actions.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-request-deny" class="btn surface-btn">Deny</button>
+        <button id="btn-request-accept" class="btn success">Accept</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Standard popup alerts for user feedback -->
+  <div id="toast-container"></div>
+
+  <!-- Web app logic -->
+  <script type="module" src="main.js"></script>
+</body>
+</html>

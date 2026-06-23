@@ -1,0 +1,32 @@
+### Node / Vite
+node_modules/
+dist/
+vite.svg
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+### Rust / Tauri
+src-tauri/target/
+src-tauri/target_tmp/
+src-tauri/target_tmp2/
+target/
+target_build_cli/
+target_tauri/
+
+### Environment files
+.env
+.env.*
+*.local
+
+### Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+
+### Build artifacts
+build/
