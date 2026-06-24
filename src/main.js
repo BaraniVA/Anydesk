@@ -184,8 +184,10 @@ function updateConnectionStatus(state, message) {
   // "connected" state is handled by the init message handler
 }
 
+let useLocalFallback = false;
+
 function getSignalingUrl() {
-  if (REMOTE_SIGNALING_URL) return REMOTE_SIGNALING_URL;
+  if (REMOTE_SIGNALING_URL && !useLocalFallback) return REMOTE_SIGNALING_URL;
   return `ws://127.0.0.1:${LOCAL_PORTS[currentPortIndex]}`;
 }
 
@@ -200,7 +202,8 @@ function connectSignaling() {
     console.log("Connected to signaling server at", url);
     signalingConnected = true;
     currentPortIndex = 0; // reset for next time
-    updateConnectionStatus("connected", "Connected to server");
+    const isRemote = REMOTE_SIGNALING_URL && !useLocalFallback;
+    updateConnectionStatus("connected", isRemote ? "Connected to remote server" : "Connected to server");
   };
 
   ws.onmessage = (event) => {
@@ -216,8 +219,18 @@ function connectSignaling() {
     const wasConnected = signalingConnected;
     signalingConnected = false;
 
-    // If using local server and never connected, try next port
-    if (!REMOTE_SIGNALING_URL && !wasConnected) {
+    // If using remote server and never connected, fall back to local ports
+    if (REMOTE_SIGNALING_URL && !useLocalFallback && !wasConnected) {
+      console.log("Failed to connect to remote signaling server, falling back to local/tunnel...");
+      useLocalFallback = true;
+      currentPortIndex = 0;
+      updateConnectionStatus("connecting", "Remote down, trying local...");
+      setTimeout(connectSignaling, 500);
+      return;
+    }
+
+    // If using local/fallback server and never connected, try next port
+    if ((!REMOTE_SIGNALING_URL || useLocalFallback) && !wasConnected) {
       currentPortIndex++;
       if (currentPortIndex < LOCAL_PORTS.length) {
         console.log(`Port ${LOCAL_PORTS[currentPortIndex - 1]} failed, trying port ${LOCAL_PORTS[currentPortIndex]}...`);
@@ -225,13 +238,22 @@ function connectSignaling() {
         setTimeout(connectSignaling, 500);
         return;
       }
-      // All ports exhausted — reset and retry from port 3000
+      // All local ports exhausted — try remote again if configured
+      if (REMOTE_SIGNALING_URL) {
+        console.log("All local ports failed, retrying remote signaling server...");
+        useLocalFallback = false;
+        currentPortIndex = 0;
+        updateConnectionStatus("connecting", "Retrying remote server...");
+        setTimeout(connectSignaling, 5000);
+        return;
+      }
       currentPortIndex = 0;
       updateConnectionStatus("error", "Server not reachable — retrying...");
       setTimeout(connectSignaling, 5000);
     } else {
-      // Was connected but lost connection, or using remote server
+      // Was connected but lost connection
       updateConnectionStatus("connecting", "Reconnecting...");
+      // Try to reconnect in the same mode (if remote was working, try remote again)
       setTimeout(connectSignaling, 3000);
     }
   };
@@ -252,16 +274,23 @@ async function checkTunnelInfo() {
     const statusDot = document.getElementById("status-dot");
     const idEl = document.getElementById("display-my-id");
 
+    const isUsingRemote = REMOTE_SIGNALING_URL && !useLocalFallback && signalingConnected;
+
     if (info.status === "connected" && info.subdomain) {
       if (!tunnelActive) {
         tunnelActive = true;
         showToast("Secure cloud tunnel established!", "success");
       }
       tunnelSubdomain = info.subdomain;
-      idEl.textContent = info.subdomain;
+      
+      if (isUsingRemote && myId) {
+        idEl.textContent = myId.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3");
+      } else {
+        idEl.textContent = info.subdomain;
+      }
       idEl.classList.remove("loading-placeholder");
 
-      if (statusText && statusDot) {
+      if (!isUsingRemote && statusText && statusDot) {
         statusText.textContent = "Zero-config cloud tunnel ready";
         statusDot.className = "status-dot connected";
       }
@@ -269,32 +298,36 @@ async function checkTunnelInfo() {
       if (tunnelActive) {
         tunnelActive = false;
         tunnelSubdomain = null;
+      }
+      
+      if (!isUsingRemote) {
         if (myId) {
           idEl.textContent = myId.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3");
         } else {
           idEl.textContent = "Connecting...";
           idEl.classList.add("loading-placeholder");
         }
-      }
-      if (info.status === "downloading_cloudflared") {
-        if (statusText && statusDot) {
-          statusText.textContent = "Zero-config: downloading cloudflared...";
-          statusDot.className = "status-dot connecting";
-        }
-      } else if (info.status === "starting_tunnel") {
-        if (statusText && statusDot) {
-          statusText.textContent = "Zero-config: starting tunnel...";
-          statusDot.className = "status-dot connecting";
-        }
-      } else if (info.status.startsWith("download_failed")) {
-        if (statusText && statusDot) {
-          statusText.textContent = "Download failed. Please check internet connection.";
-          statusDot.className = "status-dot error";
-        }
-      } else if (info.status.startsWith("spawn_failed")) {
-        if (statusText && statusDot) {
-          statusText.textContent = "Failed to start tunnel daemon.";
-          statusDot.className = "status-dot error";
+        
+        if (info.status === "downloading_cloudflared") {
+          if (statusText && statusDot) {
+            statusText.textContent = "Zero-config: downloading cloudflared...";
+            statusDot.className = "status-dot connecting";
+          }
+        } else if (info.status === "starting_tunnel") {
+          if (statusText && statusDot) {
+            statusText.textContent = "Zero-config: starting tunnel...";
+            statusDot.className = "status-dot connecting";
+          }
+        } else if (info.status.startsWith("download_failed")) {
+          if (statusText && statusDot) {
+            statusText.textContent = "Download failed. Please check internet connection.";
+            statusDot.className = "status-dot error";
+          }
+        } else if (info.status.startsWith("spawn_failed")) {
+          if (statusText && statusDot) {
+            statusText.textContent = "Failed to start tunnel daemon.";
+            statusDot.className = "status-dot error";
+          }
         }
       }
     }
@@ -443,8 +476,9 @@ function handleSignalingMessage(event) {
       const idEl = document.getElementById("display-my-id");
       const pwdEl = document.getElementById("display-my-password");
 
-      // If tunnel is active and we have the subdomain, show it instead of local ID
-      if (tunnelActive && tunnelSubdomain) {
+      // If tunnel is active, we have the subdomain, and we are NOT using the remote server, show it
+      const isUsingRemote = REMOTE_SIGNALING_URL && !useLocalFallback;
+      if (tunnelActive && tunnelSubdomain && !isUsingRemote) {
         idEl.textContent = tunnelSubdomain;
       } else {
         idEl.textContent = formatted;
