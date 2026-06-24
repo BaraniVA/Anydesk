@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: remotelink-signaling
+    runtime: node
+    plan: free
+    rootDir: signaling-server
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production

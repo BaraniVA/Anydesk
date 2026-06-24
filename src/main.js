@@ -5,10 +5,10 @@ const invoke = hasTauri ? window.__TAURI__.core.invoke : async (cmd, args) => {
   return null;
 };
 const getCurrentWindow = hasTauri ? window.__TAURI__.window.getCurrentWindow : () => ({
-  minimize: async () => {},
-  toggleMaximize: async () => {},
-  close: async () => {},
-  startDragging: async () => {},
+  minimize: async () => { },
+  toggleMaximize: async () => { },
+  close: async () => { },
+  startDragging: async () => { },
 });
 
 // --- Window Dragging and Controls ---
@@ -151,7 +151,7 @@ btnCopyTunnelCmd.addEventListener("click", async () => {
 // After deploying signaling-server/ to Render.com, paste your URL below:
 //   Example: "wss://remotelink-signaling.onrender.com"
 // Leave empty to use the local embedded server (same-network only).
-const REMOTE_SIGNALING_URL = "";
+const REMOTE_SIGNALING_URL = "https://remotelink-muwt.onrender.com";
 const LOCAL_SIGNALING_URL = "ws://127.0.0.1:3000";
 const SIGNALING_URL = REMOTE_SIGNALING_URL || LOCAL_SIGNALING_URL;
 
@@ -166,10 +166,10 @@ function updateConnectionStatus(state, message) {
   const idEl = document.getElementById("display-my-id");
   const pwdEl = document.getElementById("display-my-password");
   if (!dot || !text) return;
-  
+
   dot.className = "status-dot " + state;
   text.textContent = message;
-  
+
   if (state === "connecting") {
     idEl.textContent = "Connecting...";
     pwdEl.textContent = "Connecting...";
@@ -193,29 +193,29 @@ function connectSignaling() {
   const url = getSignalingUrl();
   console.log("Connecting to signaling server:", url);
   updateConnectionStatus("connecting", `Connecting to server...`);
-  
+
   ws = new WebSocket(url);
-  
+
   ws.onopen = () => {
     console.log("Connected to signaling server at", url);
     signalingConnected = true;
     currentPortIndex = 0; // reset for next time
     updateConnectionStatus("connected", "Connected to server");
   };
-  
+
   ws.onmessage = (event) => {
     handleSignalingMessage(event);
   };
-  
+
   ws.onerror = (e) => {
     console.error("Signaling server connection error:", e);
   };
-  
+
   ws.onclose = (e) => {
     console.log("Signaling connection closed.");
     const wasConnected = signalingConnected;
     signalingConnected = false;
-    
+
     // If using local server and never connected, try next port
     if (!REMOTE_SIGNALING_URL && !wasConnected) {
       currentPortIndex++;
@@ -260,7 +260,7 @@ async function checkTunnelInfo() {
       tunnelSubdomain = info.subdomain;
       idEl.textContent = info.subdomain;
       idEl.classList.remove("loading-placeholder");
-      
+
       if (statusText && statusDot) {
         statusText.textContent = "Zero-config cloud tunnel ready";
         statusDot.className = "status-dot connected";
@@ -341,7 +341,7 @@ btnRefreshPassword.addEventListener("click", () => {
 btnConnectPartner.addEventListener("click", () => {
   const rawId = inputPartnerId.value.trim();
   const pwd = inputPartnerPassword.value.trim();
-  
+
   if (!rawId) {
     showToast("Please enter your partner's ID", "warn");
     return;
@@ -350,32 +350,32 @@ btnConnectPartner.addEventListener("click", () => {
     showToast("Please enter your partner's password", "warn");
     return;
   }
-  
+
   // Format target ID by stripping spaces
   let targetId = rawId.replace(/\s+/g, "").toLowerCase();
   targetId = targetId.replace(/^(https?:\/\/|wss?:\/\/)/, "");
   targetId = targetId.split('/')[0];
-  
+
   const isTunnel = targetId.includes("trycloudflare.com") || !/^\d+$/.test(targetId);
-  
+
   if (isTunnel) {
     let tunnelHost = targetId;
     if (!tunnelHost.includes(".")) {
       tunnelHost = `${tunnelHost}.trycloudflare.com`;
     }
     const tunnelWsUrl = `wss://${tunnelHost}`;
-    
+
     showToast(`Connecting via secure tunnel: ${tunnelHost}...`, "info");
     btnConnectPartner.disabled = true;
-    
+
     // Close current ws if open
     if (ws) {
       ws.onclose = null; // prevent auto-reconnect trigger
       ws.close();
     }
-    
+
     ws = new WebSocket(tunnelWsUrl);
-    
+
     ws.onopen = () => {
       console.log("Connected to partner's tunnel signaling server at", tunnelWsUrl);
       isHost = false; // Viewer mode
@@ -385,18 +385,18 @@ btnConnectPartner.addEventListener("click", () => {
         password: pwd
       }));
     };
-    
+
     ws.onmessage = (event) => {
       handleSignalingMessage(event);
     };
-    
+
     ws.onerror = (e) => {
       console.error("Tunnel signaling connection error:", e);
       showToast("Tunnel connection failed or offline", "error");
       btnConnectPartner.disabled = false;
       connectSignaling(); // fallback/reconnect to local/default
     };
-    
+
     ws.onclose = (e) => {
       console.log("Tunnel connection closed.");
       btnConnectPartner.disabled = false;
@@ -407,10 +407,10 @@ btnConnectPartner.addEventListener("click", () => {
       showToast("Not connected to signaling server", "error");
       return;
     }
-    
+
     showToast("Authenticating connection with partner...", "info");
     btnConnectPartner.disabled = true;
-    
+
     isHost = false; // Viewer mode
     ws.send(JSON.stringify({
       type: "connect-request",
@@ -442,7 +442,7 @@ function handleSignalingMessage(event) {
       const formatted = data.id.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3");
       const idEl = document.getElementById("display-my-id");
       const pwdEl = document.getElementById("display-my-password");
-      
+
       // If tunnel is active and we have the subdomain, show it instead of local ID
       if (tunnelActive && tunnelSubdomain) {
         idEl.textContent = tunnelSubdomain;
@@ -450,7 +450,7 @@ function handleSignalingMessage(event) {
         idEl.textContent = formatted;
       }
       idEl.classList.remove("loading-placeholder");
-      
+
       pwdEl.textContent = data.password;
       pwdEl.classList.remove("loading-placeholder");
       updateConnectionStatus("connected", "Connected — credentials ready");
@@ -706,7 +706,7 @@ function cleanupSession() {
   screenImg.style.display = "none";
   unreadChatCount = 0;
   updateChatBadge();
-  
+
   // Clean sidebars and UI
   document.querySelectorAll(".sidebar").forEach(s => s.classList.remove("active"));
   chatContainer.innerHTML = "";
@@ -718,11 +718,11 @@ function cleanupSession() {
 // --- WebRTC Handshaking ---
 async function initiateWebRTC() {
   setupWebRTCPeer(true); // Viewer initiates
-  
+
   try {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    
+
     ws.send(JSON.stringify({
       type: "offer",
       to: peerId,
@@ -736,12 +736,12 @@ async function initiateWebRTC() {
 
 async function handleWebRTCOffer(sdp) {
   setupWebRTCPeer(false); // Host is target
-  
+
   try {
     await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp }));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    
+
     ws.send(JSON.stringify({
       type: "answer",
       to: peerId,
@@ -774,29 +774,29 @@ function startCaptureLoop() {
 
 async function captureWorker() {
   const targetFrameTime = 1000 / 30; // Target 30 FPS (33.3ms)
-  
+
   while (captureActive) {
     if (!streamChannel || streamChannel.readyState !== "open") {
       await new Promise(r => setTimeout(r, 100));
       continue;
     }
-    
+
     const startTime = Date.now();
     try {
       const b64Frame = await invoke("capture_frame");
-      
+
       // Convert base64 JPEG to binary ArrayBuffer
       const binStr = atob(b64Frame);
       const bytes = new Uint8Array(binStr.length);
       for (let i = 0; i < binStr.length; i++) {
         bytes[i] = binStr.charCodeAt(i);
       }
-      
+
       frameCount++;
       if (frameCount === 1) {
         console.log(`First frame captured: ${bytes.length} bytes (${(bytes.length / 1024).toFixed(1)} KB)`);
       }
-      
+
       if (streamChannel.readyState === "open" && captureActive) {
         streamChannel.send(bytes.buffer);
       }
@@ -808,7 +808,7 @@ async function captureWorker() {
         break;
       }
     }
-    
+
     // Calculate remaining sleep time to match target 30 FPS
     const elapsed = Date.now() - startTime;
     const sleepTime = Math.max(5, targetFrameTime - elapsed);
@@ -820,11 +820,11 @@ function handleStreamMessage(event) {
   // Convert ArrayBuffer message to blob URL and update image src
   const blob = new Blob([event.data], { type: "image/jpeg" });
   const url = URL.createObjectURL(blob);
-  
+
   screenImg.style.display = "block";
   const oldUrl = screenImg.src;
   screenImg.src = url;
-  
+
   if (oldUrl.startsWith("blob:")) {
     URL.revokeObjectURL(oldUrl);
   }
@@ -931,10 +931,10 @@ btnViewerChat.addEventListener("click", () => toggleSidebar(sidebarChat, "viewer
 
 function toggleSidebar(sidebar, type) {
   const isOpening = !sidebar.classList.contains("active");
-  
+
   // Close other sidebars
   document.querySelectorAll(".sidebar").forEach(s => s.classList.remove("active"));
-  
+
   if (isOpening) {
     sidebar.classList.add("active");
     if (sidebar === sidebarChat) {
@@ -1073,7 +1073,7 @@ function updateTransferProgress(id, sentBytes, totalBytes) {
   const progressPercent = Math.min(100, Math.round((sentBytes / totalBytes) * 100));
   const progressFill = document.getElementById(`transfer-progress-${id}`);
   const statusLabel = document.getElementById(`transfer-status-${id}`);
-  
+
   if (progressFill) progressFill.style.width = `${progressPercent}%`;
   if (statusLabel) statusLabel.textContent = `${progressPercent}%`;
 }
@@ -1140,10 +1140,10 @@ async function sendOutgoingChunks() {
 
     const chunk = tx.data.slice(tx.offset, tx.offset + CHUNK_SIZE);
     fileChannel.send(chunk);
-    
+
     tx.offset += chunk.byteLength;
     tx.chunkIndex++;
-    
+
     updateTransferProgress(tx.id, tx.offset, tx.data.byteLength);
   }
 
@@ -1171,7 +1171,7 @@ function handleFileMessage(event) {
     switch (msg.type) {
       case "file-start":
         showToast(`Receiving file: ${msg.name}...`, "info");
-        
+
         // Show file sidebar notification dot if closed
         if (!sidebarFiles.classList.contains("active") && !isHost) {
           document.getElementById("viewer-files-badge").style.display = "inline-block";
@@ -1204,7 +1204,7 @@ function handleFileMessage(event) {
       case "file-end":
         if (currentIncomingTransfer && currentIncomingTransfer.id === msg.transferId) {
           const rx = currentIncomingTransfer;
-          
+
           // Reconstruct file from collected chunks
           const blob = new Blob(rx.buffer);
           const url = URL.createObjectURL(blob);
