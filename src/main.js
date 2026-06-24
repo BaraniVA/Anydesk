@@ -151,7 +151,7 @@ btnCopyTunnelCmd.addEventListener("click", async () => {
 // After deploying signaling-server/ to Render.com, paste your URL below:
 //   Example: "wss://remotelink-signaling.onrender.com"
 // Leave empty to use the local embedded server (same-network only).
-const REMOTE_SIGNALING_URL = "https://remotelink-muwt.onrender.com";
+const REMOTE_SIGNALING_URL = "wss://remotelink-muwt.onrender.com";
 const LOCAL_SIGNALING_URL = "ws://127.0.0.1:3000";
 const SIGNALING_URL = REMOTE_SIGNALING_URL || LOCAL_SIGNALING_URL;
 
