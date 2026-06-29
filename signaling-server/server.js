@@ -46,109 +46,76 @@ const httpServer = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server: httpServer });
 
 wss.on("connection", (ws) => {
-  const peerId = generatePeerId();
-  const password = randomDigits(5);
-
-  peers.set(peerId, { ws, password });
-  console.log(`[+] Peer connected: ${peerId} (total: ${peers.size})`);
-
-  // Send init message with assigned ID and password
-  ws.send(JSON.stringify({
-    type: "init",
-    id: peerId,
-    password: password
-  }));
+  let peerId = null;
 
   ws.on("message", (raw) => {
     let data;
     try {
       data = JSON.parse(raw.toString());
-    } catch (e) {
-      return;
-    }
+    } catch (e) { return; }
 
     const msgType = data.type;
     if (!msgType) return;
 
+    if (msgType === "resume") {
+      const { id, password } = data;
+      const peer = peers.get(id);
+      if (peer && peer.password === password) {
+        peerId = id;
+        peer.ws = ws;
+        ws.send(JSON.stringify({ type: "resume-ack", success: true }));
+        return;
+      }
+      ws.send(JSON.stringify({ type: "resume-ack", success: false }));
+      return;
+    }
+
+    if (!peerId) {
+      peerId = generatePeerId();
+      const password = randomDigits(5);
+      peers.set(peerId, { ws, password });
+      ws.send(JSON.stringify({ type: "init", id: peerId, password }));
+    }
+
     switch (msgType) {
       case "ping": {
-        const peer = peers.get(peerId);
-        if (peer) peer.ws.send(JSON.stringify({ type: "pong" }));
+        ws.send(JSON.stringify({ type: "pong" }));
         break;
       }
-
       case "update-password": {
         const newPwd = data.password;
         if (newPwd && peers.has(peerId)) {
           peers.get(peerId).password = newPwd;
-          ws.send(JSON.stringify({
-            type: "update-password-ack",
-            success: true,
-            password: newPwd
-          }));
+          ws.send(JSON.stringify({ type: "update-password-ack", success: true, password: newPwd }));
         }
         break;
       }
-
       case "connect-request": {
         const targetId = (data.to || "").replace(/\s+/g, "");
-        const submittedPwd = data.password || "";
-
         const targetPeer = peers.get(targetId);
-        if (!targetPeer) {
-          ws.send(JSON.stringify({
-            type: "connect-response",
-            success: false,
-            error: "Partner is offline or not found"
-          }));
+        if (!targetPeer || targetPeer.password !== data.password) {
+          ws.send(JSON.stringify({ type: "connect-response", success: false, error: "Invalid ID or password" }));
           return;
         }
-
-        if (targetPeer.password !== submittedPwd) {
-          ws.send(JSON.stringify({
-            type: "connect-response",
-            success: false,
-            error: "Incorrect password"
-          }));
-          return;
-        }
-
-        // Authentication passed — notify both sides
-        ws.send(JSON.stringify({
-          type: "connect-response",
-          success: true,
-          from: targetId
-        }));
-
-        targetPeer.ws.send(JSON.stringify({
-          type: "incoming-session",
-          from: peerId
-        }));
+        ws.send(JSON.stringify({ type: "connect-response", success: true, from: targetId }));
+        targetPeer.ws.send(JSON.stringify({ type: "incoming-session", from: peerId }));
         break;
       }
-
       default: {
-        // Relay signaling messages (offer, answer, ice) to the target peer
         const targetId = (data.to || "").replace(/\s+/g, "");
-        if (!targetId) return;
-
         const targetPeer = peers.get(targetId);
         if (targetPeer) {
           data.from = peerId;
           targetPeer.ws.send(JSON.stringify(data));
         }
-        break;
       }
     }
   });
 
   ws.on("close", () => {
-    peers.delete(peerId);
-    console.log(`[-] Peer disconnected: ${peerId} (total: ${peers.size})`);
-  });
-
-  ws.on("error", () => {
-    peers.delete(peerId);
+    if (peerId && peers.get(peerId)?.ws === ws) {
+      // Don't delete immediately to allow for short resume windows
+    }
   });
 });
 

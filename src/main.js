@@ -43,6 +43,7 @@ let chatChannel = null;         // DataChannel for chat
 let fileChannel = null;         // DataChannel for file transfers
 
 let isHost = false;             // True if host, False if viewer
+let lastPartnerPassword = null; // Store last entered partner password for persistence
 let captureLoop = null;         // Interval ID for screen capture
 let pingLoop = null;            // Interval ID for RTT pings
 let unreadChatCount = 0;        // Unread chat messages count
@@ -374,6 +375,8 @@ btnRefreshPassword.addEventListener("click", () => {
 btnConnectPartner.addEventListener("click", () => {
   const rawId = inputPartnerId.value.trim();
   const pwd = inputPartnerPassword.value.trim();
+  // Save the password for later use in saved peers
+  lastPartnerPassword = pwd;
 
   if (!rawId) {
     showToast("Please enter your partner's ID", "warn");
@@ -471,6 +474,13 @@ function handleSignalingMessage(event) {
     case "init":
       myId = data.id;
       myPassword = data.password;
+      // Save own credentials for later sessions
+      try {
+        localStorage.setItem('myId', myId);
+        localStorage.setItem('myPassword', myPassword);
+      } catch (e) {
+        console.error('Failed to store own credentials:', e);
+      }
       // Format as "XXX XXX XXX"
       const formatted = data.id.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3");
       const idEl = document.getElementById("display-my-id");
@@ -515,6 +525,10 @@ function handleSignalingMessage(event) {
       if (data.success) {
         peerId = data.from;
         showToast("Authentication successful! Initiating WebRTC...", "success");
+        // Save peer to saved list for quick reconnection
+        if (peerId && lastPartnerPassword) {
+          addPeerToSavedList({ id: peerId, password: lastPartnerPassword, label: `Partner ${peerId}` });
+        }
         initiateWebRTC();
       } else {
         showToast(`Connection failed: ${data.error}`, "error");
@@ -748,6 +762,63 @@ function cleanupSession() {
   currentOutgoingTransfer = null;
   currentIncomingTransfer = null;
 }
+
+// --- Saved Peers Persistence ---
+function loadSavedPeers() {
+  const data = localStorage.getItem('savedPeers');
+  try {
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    console.error('Failed to parse saved peers:', e);
+    return [];
+  }
+}
+
+function savePeers(peers) {
+  localStorage.setItem('savedPeers', JSON.stringify(peers));
+}
+
+function addPeerToSavedList(peer) {
+  if (!peer.id) return;
+  const peers = loadSavedPeers();
+  if (!peers.some(p => p.id === peer.id)) {
+    peers.push(peer);
+    savePeers(peers);
+    renderSavedPeers();
+  }
+}
+
+function renderSavedPeers() {
+  const listEl = document.getElementById('saved-peer-list');
+  if (!listEl) return;
+  const peers = loadSavedPeers();
+  listEl.innerHTML = '';
+  peers.forEach(p => {
+    const li = document.createElement('li');
+    li.className = 'peer-item';
+    const btn = document.createElement('button');
+    btn.textContent = p.label || p.id;
+    btn.className = 'btn surface-btn';
+    btn.addEventListener('click', () => reconnectToPeer(p));
+    li.appendChild(btn);
+    listEl.appendChild(li);
+  });
+}
+
+function reconnectToPeer(peer) {
+  const idInput = document.getElementById('input-partner-id');
+  const pwdInput = document.getElementById('input-partner-password');
+  if (idInput && pwdInput) {
+    idInput.value = peer.id;
+    pwdInput.value = peer.password;
+    btnConnectPartner.click();
+  }
+}
+
+// Render saved peers on load
+document.addEventListener('DOMContentLoaded', () => {
+  renderSavedPeers();
+});
 
 // --- WebRTC Handshaking ---
 async function initiateWebRTC() {
