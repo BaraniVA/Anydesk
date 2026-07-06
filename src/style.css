@@ -1172,3 +1172,60 @@ body.host-session .sidebar {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
 }
+
+/* --- AI Chatbot Specific Styles --- */
+.chat-msg.user-msg {
+  background-color: var(--border);
+  align-self: flex-end;
+  border-right: 2px solid var(--muted);
+}
+
+.chat-msg.ai-msg {
+  background-color: var(--surface2);
+  align-self: flex-start;
+  border-left: 2px solid var(--accent);
+}
+
+.chat-msg.ai-msg .chat-msg-sender {
+  color: var(--accent);
+}
+
+.chat-msg.typing-msg {
+  background-color: var(--surface2);
+  align-self: flex-start;
+  color: var(--muted);
+  font-style: italic;
+  animation: pulse-animation 1.5s infinite;
+}
+
+/* Floating AI Button */
+.btn-floating-ai {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 399;
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.btn-floating-ai:hover {
+  background-color: var(--accent-dim);
+  transform: scale(1.05);
+}
+
+.btn-floating-ai:active {
+  transform: scale(0.95);
+}
+
+

@@ -59,9 +59,14 @@
             </div>
           </div>
           
-          <div class="connection-status" id="connection-status">
-            <span class="status-dot connecting" id="status-dot"></span>
-            <span id="status-text">Connecting to server...</span>
+          <div class="connection-status" id="connection-status" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="status-dot connecting" id="status-dot"></span>
+              <span id="status-text">Connecting to server...</span>
+            </div>
+            <button id="btn-troubleshoot-ai" class="btn surface-btn" style="display: none; padding: 4px 8px; font-size: 11px; align-items: center; gap: 4px; border-radius: 4px; height: 24px; line-height: 1;">
+              <span>🤖</span> AI Help
+            </button>
           </div>
           
           <div class="unattended-group">
@@ -201,6 +206,24 @@
       </aside>
 
     </section>
+
+    <!-- 5. AI TROUBLESHOOTING SIDEBAR -->
+    <aside id="sidebar-ai" class="sidebar">
+      <div class="sidebar-header">
+        <h3>🤖 AI Troubleshooter</h3>
+        <button class="btn-close-sidebar" id="btn-close-ai">&times;</button>
+      </div>
+      <div class="sidebar-content chat-messages" id="ai-chat-messages">
+        <!-- AI chat messages inserted here -->
+      </div>
+      <div class="sidebar-footer">
+        <form id="ai-chat-form">
+          <input type="text" id="ai-chat-input" placeholder="Ask AI troubleshooter..." autocomplete="off" />
+          <button type="submit" class="btn primary">Ask</button>
+        </form>
+      </div>
+    </aside>
+
   </main>
 
   <!-- 4. INCOMING CONNECTION MODAL (overlay on host) -->
@@ -222,6 +245,11 @@
       </div>
     </div>
   </div>
+
+  <!-- Floating AI Troubleshooter Action Button -->
+  <button id="btn-floating-ai" class="btn-floating-ai" title="AI Troubleshooter">
+    <span>🤖</span>
+  </button>
 
   <!-- Standard popup alerts for user feedback -->
   <div id="toast-container"></div>

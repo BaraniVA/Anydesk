@@ -94,6 +94,18 @@ const fileDropzone = document.getElementById("file-dropzone");
 const fileInputRaw = document.getElementById("file-input-raw");
 const transferList = document.getElementById("transfer-list");
 
+// --- AI Troubleshooter DOM & State ---
+const btnTroubleshootAi = document.getElementById("btn-troubleshoot-ai");
+const sidebarAi = document.getElementById("sidebar-ai");
+const btnCloseAi = document.getElementById("btn-close-ai");
+const aiChatMessages = document.getElementById("ai-chat-messages");
+const aiChatForm = document.getElementById("ai-chat-form");
+const aiChatInput = document.getElementById("ai-chat-input");
+const btnFloatingAi = document.getElementById("btn-floating-ai");
+
+let aiMessages = [];
+
+
 // --- Screen Router ---
 function showScreen(screenId) {
   document.querySelectorAll(".screen-view").forEach(s => s.classList.remove("active"));
@@ -165,6 +177,7 @@ function updateConnectionStatus(state, message) {
   const text = document.getElementById("status-text");
   const idEl = document.getElementById("display-my-id");
   const pwdEl = document.getElementById("display-my-password");
+  const aiBtn = document.getElementById("btn-troubleshoot-ai");
   if (!dot || !text) return;
 
   dot.className = "status-dot " + state;
@@ -175,11 +188,15 @@ function updateConnectionStatus(state, message) {
     pwdEl.textContent = "Connecting...";
     idEl.classList.add("loading-placeholder");
     pwdEl.classList.add("loading-placeholder");
+    if (aiBtn) aiBtn.style.display = "none";
   } else if (state === "error") {
     idEl.textContent = "Not available";
     pwdEl.textContent = "Not available";
     idEl.classList.add("loading-placeholder");
     pwdEl.classList.add("loading-placeholder");
+    if (aiBtn) aiBtn.style.display = "inline-flex";
+  } else if (state === "connected") {
+    if (aiBtn) aiBtn.style.display = "none";
   }
   // "connected" state is handled by the init message handler
 }
@@ -519,6 +536,9 @@ function handleSignalingMessage(event) {
       } else {
         showToast(`Connection failed: ${data.error}`, "error");
         cleanupSession();
+        const aiBtn = document.getElementById("btn-troubleshoot-ai");
+        if (aiBtn) aiBtn.style.display = "inline-flex";
+        startAiDiagnostic(`Partner connection failed: ${data.error}`);
       }
       break;
 
@@ -1332,3 +1352,142 @@ function handleControlMessage(event) {
     }
   }
 }
+
+// --- AI Troubleshooting Logic ---
+function toggleAiSidebar(reason = "User initiated manual troubleshooting") {
+  const isOpening = !sidebarAi.classList.contains("active");
+  document.querySelectorAll(".sidebar").forEach(s => s.classList.remove("active"));
+  if (isOpening) {
+    sidebarAi.classList.add("active");
+    if (aiMessages.length === 0) {
+      startAiDiagnostic(reason);
+    }
+  }
+}
+
+if (btnTroubleshootAi) {
+  btnTroubleshootAi.addEventListener("click", () => toggleAiSidebar("Status panel troubleshoot click"));
+}
+
+if (btnFloatingAi) {
+  btnFloatingAi.addEventListener("click", () => toggleAiSidebar("Floating AI button click"));
+}
+
+if (aiChatForm) {
+  aiChatForm.addEventListener("submit", sendAiChatMessage);
+}
+
+async function startAiDiagnostic(failureReason) {
+  aiMessages = [];
+  aiChatMessages.innerHTML = "";
+  
+  appendAiMessage("System", "Starting diagnostic scan...", "ai-msg typing-msg");
+  
+  await new Promise(r => setTimeout(r, 800));
+
+  const diagnostics = await gatherDiagnostics(failureReason);
+  
+  aiChatMessages.innerHTML = "";
+  appendAiMessage("System", "Diagnostic scan completed. Analyzing network/system telemetry...", "ai-msg typing-msg");
+  
+  try {
+    const responseText = await callTroubleshootApi(diagnostics, []);
+    
+    aiChatMessages.innerHTML = "";
+    appendAiMessage("AI Assistant", responseText, "ai-msg");
+    aiMessages.push({ role: "assistant", content: responseText });
+  } catch (err) {
+    aiChatMessages.innerHTML = "";
+    appendAiMessage("AI Assistant", `Diagnostic analysis failed: ${err.message}. Please check if the signaling server is running.`, "ai-msg");
+  }
+}
+
+async function sendAiChatMessage(e) {
+  e.preventDefault();
+  const userText = aiChatInput.value.trim();
+  if (!userText) return;
+  
+  aiChatInput.value = "";
+  appendAiMessage("You", userText, "user-msg");
+  aiMessages.push({ role: "user", content: userText });
+  
+  const typingEl = appendAiMessage("AI Assistant", "Thinking...", "ai-msg typing-msg");
+  
+  try {
+    const diagnostics = await gatherDiagnostics("Ongoing chat troubleshooting");
+    const responseText = await callTroubleshootApi(diagnostics, aiMessages);
+    
+    typingEl.remove();
+    appendAiMessage("AI Assistant", responseText, "ai-msg");
+    aiMessages.push({ role: "assistant", content: responseText });
+  } catch (err) {
+    typingEl.remove();
+    appendAiMessage("AI Assistant", `Failed to get response: ${err.message}`, "ai-msg");
+  }
+}
+
+function appendAiMessage(sender, text, className) {
+  const msgEl = document.createElement("div");
+  msgEl.className = `chat-msg ${className}`;
+  
+  const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  
+  msgEl.innerHTML = `
+    <div class="chat-msg-header">
+      <span class="chat-msg-sender">${sender}</span>
+      <span class="chat-msg-time">${timeStr}</span>
+    </div>
+    <div class="chat-msg-body">${escapedText}</div>
+  `;
+  
+  aiChatMessages.appendChild(msgEl);
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+  return msgEl;
+}
+
+async function gatherDiagnostics(failureReason) {
+  let localIp = "unknown";
+  if (hasTauri) {
+    try {
+      localIp = await invoke("get_local_ip") || "unknown";
+    } catch (e) {
+      console.warn("get_local_ip failed:", e);
+    }
+  }
+  
+  return {
+    failureReason,
+    userAgent: navigator.userAgent,
+    isOnline: navigator.onLine,
+    signalingUrl: SIGNALING_URL,
+    signalingConnected,
+    tunnelActive,
+    tunnelSubdomain,
+    localIp,
+    webrtcState: pc ? pc.connectionState : "not_initialized",
+    iceState: pc ? pc.iceConnectionState : "not_initialized",
+    timestamp: new Date().toISOString()
+  };
+}
+
+async function callTroubleshootApi(diagnostics, messages) {
+  const httpBaseUrl = SIGNALING_URL.replace(/^ws/, "http");
+  
+  const response = await fetch(`${httpBaseUrl}/api/troubleshoot`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ diagnostics, messages })
+  });
+  
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `HTTP error ${response.status}`);
+  }
+  
+  const data = await response.json();
+  return data.response;
+}
+

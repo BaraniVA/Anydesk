@@ -32,11 +32,85 @@ function generatePeerId() {
   return id;
 }
 
-// Simple HTTP health check endpoint (required by Render)
+// Simple HTTP health check and troubleshooting endpoints
 const httpServer = http.createServer((req, res) => {
+  // CORS Preflight
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type"
+    });
+    res.end();
+    return;
+  }
+
   if (req.url === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
+    res.writeHead(200, { 
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*"
+    });
     res.end(JSON.stringify({ status: "ok", peers: peers.size }));
+  } else if (req.url === "/api/troubleshoot" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+    req.on("end", async () => {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Content-Type", "application/json");
+
+      try {
+        const payload = JSON.parse(body);
+        const { diagnostics, messages } = payload;
+
+        const groqApiKey = process.env.GROQ_API_KEY;
+        if (!groqApiKey) {
+          res.writeHead(500);
+          res.end(JSON.stringify({ error: "Groq API Key is not configured on the server." }));
+          return;
+        }
+
+        const systemPrompt = `You are the AI Troubleshooting Assistant for RemoteLink, a secure desktop remote control application built with Tauri, React, Rust, and WebRTC.
+The user is experiencing a connection/networking issue.
+Here are the collected system and application diagnostics:
+${JSON.stringify(diagnostics, null, 2)}
+
+Provide highly relevant, clear, and actionable steps to resolve the issue. If the signaling server is down, tell them to check the server status. If WebRTC failed, mention potential firewall or VPN blocks. Be concise, empathetic, and professional. Do not suggest generic web troubleshooting unless relevant to the diagnostics.`;
+
+        const apiMessages = [
+          { role: "system", content: systemPrompt },
+          ...messages
+        ];
+
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${groqApiKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "llama-3.1-8b-instant",
+            messages: apiMessages,
+            temperature: 0.5,
+            max_tokens: 1024
+          })
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`Groq API returned ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        res.writeHead(200);
+        res.end(JSON.stringify({ response: data.choices[0].message.content }));
+      } catch (err) {
+        console.error("Troubleshooting endpoint error:", err);
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: "Failed to process troubleshooting request: " + err.message }));
+      }
+    });
   } else {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("RemoteLink Signaling Server");

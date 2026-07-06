@@ -9,3 +9,5 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: GROQ_API_KEY
+        sync: false # Set your Groq API Key here in the Render dashboard
