@@ -62,7 +62,7 @@ const httpServer = http.createServer((req, res) => {
 
       try {
         const payload = JSON.parse(body);
-        const { diagnostics, messages } = payload;
+        const { diagnostics, messages, image } = payload;
 
         const groqApiKey = process.env.GROQ_API_KEY;
         if (!groqApiKey) {
@@ -71,17 +71,38 @@ const httpServer = http.createServer((req, res) => {
           return;
         }
 
-        const systemPrompt = `You are the AI Troubleshooting Assistant for RemoteLink, a secure desktop remote control application built with Tauri, React, Rust, and WebRTC.
-The user is experiencing a connection/networking issue.
-Here are the collected system and application diagnostics:
-${JSON.stringify(diagnostics, null, 2)}
+        const systemPrompt = `You are RemoteLink AI, a helpful, intelligent, and general-purpose AI assistant integrated directly into RemoteLink (a secure desktop remote control application built with Tauri, Rust, and WebRTC).
 
-Provide highly relevant, clear, and actionable steps to resolve the issue. If the signaling server is down, tell them to check the server status. If WebRTC failed, mention potential firewall or VPN blocks. Be concise, empathetic, and professional. Do not suggest generic web troubleshooting unless relevant to the diagnostics.`;
+Capabilities & Instructions:
+1. You can answer general-purpose questions, explain concepts, write code, or just chat.
+2. You can troubleshoot remote control, networking, WebRTC, signaling, or connection issues if the user is facing them. Here is the current system and application diagnostics telemetry:
+${JSON.stringify(diagnostics, null, 2)}
+3. If the user attaches a screenshot (an image of their screen), analyze the screenshot to answer their questions about what is on their screen. Be specific, point out elements they ask about, perform OCR, explain UI components, or troubleshoot visual bugs.
+4. Keep your answers concise, clear, and actionable. Be professional, friendly, and direct.`;
 
         const apiMessages = [
           { role: "system", content: systemPrompt },
           ...messages
         ];
+
+        const hasImage = !!image;
+        if (hasImage) {
+          const lastUserMsgIndex = apiMessages.map(m => m.role).lastIndexOf("user");
+          if (lastUserMsgIndex !== -1) {
+            const textContent = apiMessages[lastUserMsgIndex].content;
+            apiMessages[lastUserMsgIndex].content = [
+              { type: "text", text: textContent },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${image}`
+                }
+              }
+            ];
+          }
+        }
+
+        const modelToUse = hasImage ? "llama-3.2-11b-vision-preview" : "llama-3.1-8b-instant";
 
         const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
@@ -90,7 +111,7 @@ Provide highly relevant, clear, and actionable steps to resolve the issue. If th
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            model: "llama-3.1-8b-instant",
+            model: modelToUse,
             messages: apiMessages,
             temperature: 0.5,
             max_tokens: 1024

@@ -779,6 +779,7 @@ body.host-session .sidebar {
 
 .chat-msg-body {
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .sidebar-footer {

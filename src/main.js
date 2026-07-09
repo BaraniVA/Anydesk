@@ -9,6 +9,7 @@ const getCurrentWindow = hasTauri ? window.__TAURI__.window.getCurrentWindow : (
   toggleMaximize: async () => { },
   close: async () => { },
   startDragging: async () => { },
+  setSkipTaskbar: async (skip) => { },
 });
 
 // --- Window Dragging and Controls ---
@@ -692,8 +693,14 @@ function onConnectionOpened() {
   if (isHost) {
     document.getElementById("host-peer-display").textContent = peerId.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3");
     startCaptureLoop();
+    if (hasTauri) {
+      appWindow.setSkipTaskbar(true).catch(err => console.error("Failed to set skipTaskbar for host:", err));
+    }
   } else {
     startPingLoop();
+    if (hasTauri) {
+      appWindow.setSkipTaskbar(false).catch(err => console.error("Failed to set skipTaskbar for viewer:", err));
+    }
   }
 }
 
@@ -767,6 +774,10 @@ function cleanupSession() {
   transferList.innerHTML = "";
   currentOutgoingTransfer = null;
   currentIncomingTransfer = null;
+
+  if (hasTauri) {
+    appWindow.setSkipTaskbar(true).catch(err => console.error("Failed to reset taskbar icon on cleanup:", err));
+  }
 }
 
 // --- WebRTC Handshaking ---
@@ -1353,14 +1364,46 @@ function handleControlMessage(event) {
   }
 }
 
-// --- AI Troubleshooting Logic ---
+// --- AI Troubleshooting & Assistance Logic ---
+async function captureCurrentScreen() {
+  // If we are in an active session as a viewer, capture the remote screen image
+  if (screenActiveSession.classList.contains("active") && !isHost && screenImg && screenImg.src) {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = screenImg.naturalWidth || screenImg.width || 1280;
+      canvas.height = screenImg.naturalHeight || screenImg.height || 720;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(screenImg, 0, 0);
+      return canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
+    } catch (e) {
+      console.error("Failed to capture screenImg via canvas:", e);
+    }
+  }
+  // Otherwise, if Tauri is available, capture the local primary screen
+  if (hasTauri) {
+    try {
+      return await invoke("capture_frame");
+    } catch (e) {
+      console.error("capture_frame failed:", e);
+    }
+  }
+  return null;
+}
+
 function toggleAiSidebar(reason = "User initiated manual troubleshooting") {
   const isOpening = !sidebarAi.classList.contains("active");
   document.querySelectorAll(".sidebar").forEach(s => s.classList.remove("active"));
   if (isOpening) {
     sidebarAi.classList.add("active");
     if (aiMessages.length === 0) {
-      startAiDiagnostic(reason);
+      if (reason.includes("Status panel") || reason.includes("failure")) {
+        startAiDiagnostic(reason);
+      } else {
+        // Welcome message for general AI chat
+        aiMessages = [];
+        aiChatMessages.innerHTML = "";
+        appendAiMessage("AI Assistant", "Hello! I am RemoteLink AI, your general AI assistant. Ask me anything, or check 'Attach current screen' to analyze what's currently on your display.", "ai-msg");
+      }
     }
   }
 }
@@ -1391,7 +1434,7 @@ async function startAiDiagnostic(failureReason) {
   appendAiMessage("System", "Diagnostic scan completed. Analyzing network/system telemetry...", "ai-msg typing-msg");
   
   try {
-    const responseText = await callTroubleshootApi(diagnostics, []);
+    const responseText = await callTroubleshootApi(diagnostics, [], null);
     
     aiChatMessages.innerHTML = "";
     appendAiMessage("AI Assistant", responseText, "ai-msg");
@@ -1408,14 +1451,26 @@ async function sendAiChatMessage(e) {
   if (!userText) return;
   
   aiChatInput.value = "";
-  appendAiMessage("You", userText, "user-msg");
+  
+  // Check if screenshot is requested
+  const includeScreenCheckbox = document.getElementById("ai-include-screen");
+  const shouldAttachScreen = includeScreenCheckbox && includeScreenCheckbox.checked;
+  
+  let screenshotBase64 = null;
+  if (shouldAttachScreen) {
+    screenshotBase64 = await captureCurrentScreen();
+    if (includeScreenCheckbox) includeScreenCheckbox.checked = false; // Reset checkbox
+  }
+  
+  const imgUrl = screenshotBase64 ? `data:image/jpeg;base64,${screenshotBase64}` : null;
+  appendAiMessage("You", userText, "user-msg", imgUrl);
   aiMessages.push({ role: "user", content: userText });
   
   const typingEl = appendAiMessage("AI Assistant", "Thinking...", "ai-msg typing-msg");
   
   try {
     const diagnostics = await gatherDiagnostics("Ongoing chat troubleshooting");
-    const responseText = await callTroubleshootApi(diagnostics, aiMessages);
+    const responseText = await callTroubleshootApi(diagnostics, aiMessages, screenshotBase64);
     
     typingEl.remove();
     appendAiMessage("AI Assistant", responseText, "ai-msg");
@@ -1426,19 +1481,27 @@ async function sendAiChatMessage(e) {
   }
 }
 
-function appendAiMessage(sender, text, className) {
+function appendAiMessage(sender, text, className, imageUrl = null) {
   const msgEl = document.createElement("div");
   msgEl.className = `chat-msg ${className}`;
   
   const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   
+  let imgHtml = "";
+  if (imageUrl) {
+    imgHtml = `<div class="chat-screenshot-preview" style="margin-top: 8px;"><img src="${imageUrl}" style="max-width: 100%; border-radius: 4px; border: 1px solid var(--border);" /></div>`;
+  }
+  
   msgEl.innerHTML = `
     <div class="chat-msg-header">
       <span class="chat-msg-sender">${sender}</span>
       <span class="chat-msg-time">${timeStr}</span>
     </div>
-    <div class="chat-msg-body">${escapedText}</div>
+    <div class="chat-msg-body">
+      <div>${escapedText}</div>
+      ${imgHtml}
+    </div>
   `;
   
   aiChatMessages.appendChild(msgEl);
@@ -1471,7 +1534,7 @@ async function gatherDiagnostics(failureReason) {
   };
 }
 
-async function callTroubleshootApi(diagnostics, messages) {
+async function callTroubleshootApi(diagnostics, messages, image = null) {
   const httpBaseUrl = SIGNALING_URL.replace(/^ws/, "http");
   
   const response = await fetch(`${httpBaseUrl}/api/troubleshoot`, {
@@ -1479,7 +1542,7 @@ async function callTroubleshootApi(diagnostics, messages) {
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ diagnostics, messages })
+    body: JSON.stringify({ diagnostics, messages, image })
   });
   
   if (!response.ok) {
