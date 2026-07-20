@@ -1753,8 +1753,69 @@ async function startAiDiagnostic(failureReason) {
   aiChatMessages.innerHTML = "";
   appendAiMessage("System", "Diagnostic scan completed. Analyzing network/system telemetry...", "ai-msg typing-msg");
   
+function cleanThinkingBlocks(text) {
+  if (!text) return "";
+  let clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  clean = clean.replace(/<think>[\s\S]*/gi, "");
+  return clean.trim();
+}
+
+function formatAiMessageText(text) {
+  if (!text) return "";
+
+  // 1. Strip thinking blocks (<think>...</think> or unclosed <think>...)
+  let clean = cleanThinkingBlocks(text);
+
+  // 2. Protect Code Blocks & Inline Code
+  const codeBlocks = [];
+  clean = clean.replace(/```([\s\S]*?)```/g, (match, code) => {
+    codeBlocks.push(code);
+    return `___CODE_BLOCK_${codeBlocks.length - 1}___`;
+  });
+
+  const inlineCodes = [];
+  clean = clean.replace(/`([^`]+)`/g, (match, code) => {
+    inlineCodes.push(code);
+    return `___INLINE_CODE_${inlineCodes.length - 1}___`;
+  });
+
+  // 3. Escape HTML special characters for security
+  clean = clean.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // 4. Restore Code Blocks & Inline Code with proper styling
+  clean = clean.replace(/___CODE_BLOCK_(\d+)___/g, (match, index) => {
+    const code = codeBlocks[index].replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return `<pre style="background: var(--surface); border: 1px solid var(--border); padding: 8px; border-radius: 4px; font-family: var(--font-mono); font-size: 11px; overflow-x: auto; margin: 6px 0;"><code>${code.trim()}</code></pre>`;
+  });
+
+  clean = clean.replace(/___INLINE_CODE_(\d+)___/g, (match, index) => {
+    const code = inlineCodes[index].replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return `<code style="background: var(--surface); border: 1px solid var(--border); padding: 1px 4px; border-radius: 3px; font-family: var(--font-mono); font-size: 11px; color: var(--accent);">${code}</code>`;
+  });
+
+  // 5. Format Headers (#, ##, ###)
+  clean = clean.replace(/^#{1,6}\s+(.+)$/gm, '<strong style="display: block; font-size: 13px; font-weight: 700; margin-top: 10px; margin-bottom: 4px; color: var(--accent);">$1</strong>');
+
+  // 6. Format Bold (**text** or __text__)
+  clean = clean.replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight: 600; color: var(--text);">$1</strong>');
+  clean = clean.replace(/__(.*?)__/g, '<strong style="font-weight: 600; color: var(--text);">$1</strong>');
+
+  // 7. Format Italic (*text* or _text_)
+  clean = clean.replace(/\*(.*?)\*/g, '<em style="font-style: italic;">$1</em>');
+  clean = clean.replace(/_(.*?)_/g, '<em style="font-style: italic;">$1</em>');
+
+  // 8. Format Bullet Points (* or -) cleanly without raw asterisks
+  clean = clean.replace(/^(\s*)[\*\-]\s+(.+)$/gm, '$1<span style="color: var(--accent); font-weight: bold; margin-right: 6px;">•</span>$2');
+
+  // 9. Format line breaks
+  clean = clean.replace(/\n/g, "<br>");
+
+  return clean;
+}
+
   try {
-    const responseText = await callTroubleshootApi(diagnostics, [], null);
+    let responseText = await callTroubleshootApi(diagnostics, [], null);
+    responseText = cleanThinkingBlocks(responseText);
     
     aiChatMessages.innerHTML = "";
     appendAiMessage("AI Assistant", responseText, "ai-msg");
@@ -1791,7 +1852,8 @@ async function sendAiChatMessage(e) {
   
   try {
     const diagnostics = await gatherDiagnostics("Ongoing chat troubleshooting");
-    const responseText = await callTroubleshootApi(diagnostics, aiMessages, screenshotBase64);
+    let responseText = await callTroubleshootApi(diagnostics, aiMessages, screenshotBase64);
+    responseText = cleanThinkingBlocks(responseText);
     
     typingEl.remove();
     appendAiMessage("AI Assistant", responseText, "ai-msg");
@@ -1808,7 +1870,10 @@ function appendAiMessage(sender, text, className, imageUrl = null) {
   msgEl.className = `chat-msg ${className}`;
   
   const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const isAiOrSystem = className.includes("ai-msg") || sender === "AI Assistant" || sender === "System";
+  const formattedHtml = isAiOrSystem 
+    ? formatAiMessageText(text) 
+    : text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
   
   let imgHtml = "";
   if (imageUrl) {
@@ -1821,7 +1886,7 @@ function appendAiMessage(sender, text, className, imageUrl = null) {
       <span class="chat-msg-time">${timeStr}</span>
     </div>
     <div class="chat-msg-body">
-      <div>${escapedText}</div>
+      <div>${formattedHtml}</div>
       ${imgHtml}
     </div>
   `;

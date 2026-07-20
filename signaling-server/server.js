@@ -78,7 +78,8 @@ Capabilities & Instructions:
 2. You can troubleshoot remote control, networking, WebRTC, signaling, or connection issues if the user is facing them. Here is the current system and application diagnostics telemetry:
 ${JSON.stringify(diagnostics, null, 2)}
 3. If the user attaches a screenshot (an image of their screen), analyze the screenshot to answer their questions about what is on their screen. Be specific, point out elements they ask about, perform OCR, explain UI components, or troubleshoot visual bugs.
-4. Keep your answers concise, clear, and actionable. Be professional, friendly, and direct.`;
+4. Keep your answers concise, clear, and actionable. Be professional, friendly, and direct.
+5. DO NOT output internal thinking blocks, scratchpads, or <think> tags. Provide direct, clean responses.`;
 
         const apiMessages = [
           { role: "system", content: systemPrompt },
@@ -124,8 +125,11 @@ ${JSON.stringify(diagnostics, null, 2)}
         }
 
         const data = await response.json();
+        let content = data.choices[0]?.message?.content || "";
+        content = content.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<think>[\s\S]*/gi, "").trim();
+
         res.writeHead(200);
-        res.end(JSON.stringify({ response: data.choices[0].message.content }));
+        res.end(JSON.stringify({ response: content }));
       } catch (err) {
         console.error("Troubleshooting endpoint error:", err);
         res.writeHead(500);
