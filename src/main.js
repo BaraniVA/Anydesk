@@ -1740,19 +1740,6 @@ if (aiChats.length > 0) {
   startNewAiChat();
 }
 
-async function startAiDiagnostic(failureReason) {
-  aiMessages = [];
-  aiChatMessages.innerHTML = "";
-  
-  appendAiMessage("System", "Starting diagnostic scan...", "ai-msg typing-msg");
-  
-  await new Promise(r => setTimeout(r, 800));
-
-  const diagnostics = await gatherDiagnostics(failureReason);
-  
-  aiChatMessages.innerHTML = "";
-  appendAiMessage("System", "Diagnostic scan completed. Analyzing network/system telemetry...", "ai-msg typing-msg");
-  
 function cleanThinkingBlocks(text) {
   if (!text) return "";
   let clean = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
@@ -1813,6 +1800,19 @@ function formatAiMessageText(text) {
   return clean;
 }
 
+async function startAiDiagnostic(failureReason) {
+  aiMessages = [];
+  aiChatMessages.innerHTML = "";
+  
+  appendAiMessage("System", "Starting diagnostic scan...", "ai-msg typing-msg");
+  
+  await new Promise(r => setTimeout(r, 800));
+
+  const diagnostics = await gatherDiagnostics(failureReason);
+  
+  aiChatMessages.innerHTML = "";
+  appendAiMessage("System", "Diagnostic scan completed. Analyzing network/system telemetry...", "ai-msg typing-msg");
+  
   try {
     let responseText = await callTroubleshootApi(diagnostics, [], null);
     responseText = cleanThinkingBlocks(responseText);
