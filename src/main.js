@@ -30,6 +30,35 @@ if (titleBar) {
   });
 }
 
+// --- Theme Toggling and Persistence ---
+const btnThemeToggle = document.getElementById("titlebar-theme-toggle");
+const themeIconSvg = document.getElementById("theme-icon-svg");
+
+function setTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("remotelink_theme", theme);
+  if (!themeIconSvg) return;
+  if (theme === "light") {
+    // Moon Icon path (to switch to dark mode)
+    themeIconSvg.innerHTML = `<path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>`;
+    btnThemeToggle.title = "Switch to Dark Mode";
+  } else {
+    // Sun Icon path (to switch to light mode)
+    themeIconSvg.innerHTML = `<path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0s-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0s-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41l-1.06-1.06zm1.06-12.37c-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06c.39-.39.39-1.03 0-1.41zm-12.37 12.37c-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06c.39-.39.39-1.03 0-1.41z"/>`;
+    btnThemeToggle.title = "Switch to Light Mode";
+  }
+}
+
+if (btnThemeToggle) {
+  btnThemeToggle.addEventListener("click", () => {
+    const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+    setTheme(currentTheme === "light" ? "dark" : "light");
+  });
+}
+
+// Initial theme load
+setTheme(localStorage.getItem("remotelink_theme") || "dark");
+
 
 // --- State Variables ---
 let ws = null;                  // Signaling WebSocket
@@ -79,9 +108,11 @@ const viewerToolbar = document.getElementById("viewer-toolbar");
 const btnViewerDisconnect = document.getElementById("btn-viewer-disconnect");
 const btnViewerFiles = document.getElementById("btn-viewer-files");
 const btnViewerChat = document.getElementById("btn-viewer-chat");
+const btnViewerAi = document.getElementById("btn-viewer-ai");
 
 const btnHostDisconnect = document.getElementById("btn-host-disconnect");
 const btnHostChat = document.getElementById("btn-host-chat");
+const btnHostAi = document.getElementById("btn-host-ai");
 const hostPeerDisplay = document.getElementById("host-peer-display");
 
 const sidebarChat = document.getElementById("sidebar-chat");
@@ -103,8 +134,13 @@ const aiChatMessages = document.getElementById("ai-chat-messages");
 const aiChatForm = document.getElementById("ai-chat-form");
 const aiChatInput = document.getElementById("ai-chat-input");
 const btnFloatingAi = document.getElementById("btn-floating-ai");
+const btnNewAiChat = document.getElementById("btn-new-ai-chat");
+const btnAiChatHistory = document.getElementById("btn-ai-chat-history");
+const aiChatHistoryContainer = document.getElementById("ai-chat-history-container");
 
 let aiMessages = [];
+let aiChats = [];
+let currentChatId = null;
 
 
 // --- Screen Router ---
@@ -990,18 +1026,23 @@ function handleControlPong(ev) {
   }
 }
 
-// --- Chat Side panel ---
+// --- Sidebars Management ---
+function closeAllSidebars() {
+  document.querySelectorAll(".sidebar").forEach(s => s.classList.remove("active"));
+  document.body.classList.remove("sidebar-open");
+}
+
 btnHostChat.addEventListener("click", () => toggleSidebar(sidebarChat, "host"));
 btnViewerChat.addEventListener("click", () => toggleSidebar(sidebarChat, "viewer"));
 
 function toggleSidebar(sidebar, type) {
   const isOpening = !sidebar.classList.contains("active");
 
-  // Close other sidebars
-  document.querySelectorAll(".sidebar").forEach(s => s.classList.remove("active"));
+  closeAllSidebars();
 
   if (isOpening) {
     sidebar.classList.add("active");
+    document.body.classList.add("sidebar-open");
     if (sidebar === sidebarChat) {
       unreadChatCount = 0;
       updateChatBadge();
@@ -1014,8 +1055,16 @@ function toggleSidebar(sidebar, type) {
 }
 
 document.querySelectorAll(".btn-close-sidebar").forEach(btn => {
-  btn.addEventListener("click", () => {
-    btn.closest(".sidebar").classList.remove("active");
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeAllSidebars();
+  });
+});
+
+document.querySelectorAll(".btn-sidebar-ai-switch").forEach(btn => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleAiSidebar("Header AI quick-switch click");
   });
 });
 
@@ -1390,20 +1439,240 @@ async function captureCurrentScreen() {
   return null;
 }
 
+// --- AI Chat History and Session Management ---
+function loadAiChatsFromStorage() {
+  try {
+    const stored = localStorage.getItem("remotelink_ai_chats");
+    if (stored) {
+      aiChats = JSON.parse(stored);
+    } else {
+      aiChats = [];
+    }
+  } catch (e) {
+    console.error("Failed to load AI chats:", e);
+    aiChats = [];
+  }
+}
+
+function saveAiChatsToStorage() {
+  try {
+    localStorage.setItem("remotelink_ai_chats", JSON.stringify(aiChats));
+  } catch (e) {
+    console.error("Failed to save AI chats:", e);
+  }
+}
+
+function startNewAiChat(customTitle = "New Chat") {
+  currentChatId = "chat_" + Date.now();
+  
+  const welcomeText = "Hello! I am RemoteLink AI, your general AI assistant. Ask me anything, or check 'Attach current screen' to analyze what's currently on your display.";
+  const messages = [];
+  
+  if (customTitle === "New Chat") {
+    messages.push({ role: "assistant", content: welcomeText });
+  }
+  
+  aiMessages = [...messages];
+  
+  const newChat = {
+    id: currentChatId,
+    title: customTitle,
+    messages: [...messages],
+    created: Date.now()
+  };
+  
+  aiChats.unshift(newChat);
+  saveAiChatsToStorage();
+  
+  loadAiChat(currentChatId);
+}
+
+function loadAiChat(chatId) {
+  const chat = aiChats.find(c => c.id === chatId);
+  if (!chat) return;
+  
+  currentChatId = chatId;
+  aiMessages = [...chat.messages];
+  aiChatMessages.innerHTML = "";
+  
+  if (aiMessages.length === 0) {
+    appendAiMessage("AI Assistant", "Hello! This is a fresh chat. Ask me anything.", "ai-msg");
+  } else {
+    aiMessages.forEach(msg => {
+      const isUser = msg.role === "user";
+      const sender = isUser ? "You" : "AI Assistant";
+      const className = isUser ? "user-msg" : "ai-msg";
+      appendAiMessage(sender, msg.content, className);
+    });
+  }
+  
+  showAiActiveChatView();
+}
+
+function deleteAiChat(chatId) {
+  aiChats = aiChats.filter(c => c.id !== chatId);
+  saveAiChatsToStorage();
+  
+  renderAiChatHistory();
+  
+  if (currentChatId === chatId) {
+    if (aiChats.length > 0) {
+      loadAiChat(aiChats[0].id);
+    } else {
+      startNewAiChat();
+    }
+  }
+}
+
+function renameAiChat(chatId, newTitle) {
+  const chat = aiChats.find(c => c.id === chatId);
+  if (chat && newTitle.trim()) {
+    chat.title = newTitle.trim();
+    saveAiChatsToStorage();
+    renderAiChatHistory();
+  }
+}
+
+function showAiActiveChatView() {
+  document.getElementById("ai-chat-messages").style.display = "flex";
+  document.querySelector("#sidebar-ai .sidebar-footer").style.display = "block";
+  document.getElementById("ai-chat-history-container").style.display = "none";
+  if (btnAiChatHistory) btnAiChatHistory.classList.remove("active");
+}
+
+function showAiHistoryView() {
+  document.getElementById("ai-chat-messages").style.display = "none";
+  document.querySelector("#sidebar-ai .sidebar-footer").style.display = "none";
+  document.getElementById("ai-chat-history-container").style.display = "flex";
+  if (btnAiChatHistory) btnAiChatHistory.classList.add("active");
+  renderAiChatHistory();
+}
+
+function renderAiChatHistory() {
+  const container = document.getElementById("ai-chat-history-container");
+  container.innerHTML = "";
+  
+  if (aiChats.length === 0) {
+    container.innerHTML = `
+      <div style="color: var(--muted); text-align: center; margin-top: 40px; font-size: 13px;">
+        <p>No chat history yet</p>
+        <p style="font-size: 11px; margin-top: 8px;">Start a new chat using the + button above.</p>
+      </div>
+    `;
+    return;
+  }
+  
+  aiChats.forEach(chat => {
+    const item = document.createElement("div");
+    item.className = "history-chat-item";
+    if (chat.id === currentChatId) {
+      item.classList.add("active");
+    }
+    
+    item.innerHTML = `
+      <div class="history-chat-title-wrapper" style="flex-grow: 1; overflow: hidden; display: flex; align-items: center;">
+        <span class="history-chat-title" id="title-text-${chat.id}" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; font-weight: 500; font-size: 12px; max-width: 170px;">${chat.title}</span>
+      </div>
+      <div class="history-chat-actions">
+        <button class="btn-icon-small btn-rename-chat" data-id="${chat.id}" title="Rename" style="padding: 2px;">
+          <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: currentColor;"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+        </button>
+        <button class="btn-icon-small btn-delete-chat" data-id="${chat.id}" title="Delete" style="padding: 2px;">
+          <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: var(--danger);"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+        </button>
+      </div>
+    `;
+    
+    item.addEventListener("click", () => {
+      loadAiChat(chat.id);
+    });
+    
+    const renameBtn = item.querySelector(".btn-rename-chat");
+    renameBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      startRenameChat(chat.id);
+    });
+    
+    const deleteBtn = item.querySelector(".btn-delete-chat");
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteAiChat(chat.id);
+    });
+    
+    container.appendChild(item);
+  });
+}
+
+function startRenameChat(chatId) {
+  const chat = aiChats.find(c => c.id === chatId);
+  if (!chat) return;
+  
+  const titleTextEl = document.getElementById(`title-text-${chatId}`);
+  const titleWrapper = titleTextEl.parentElement;
+  const currentTitle = chat.title;
+  
+  titleWrapper.innerHTML = `
+    <input type="text" id="rename-input-${chatId}" value="${currentTitle}" 
+      style="width: 100%; font-size: 12px; padding: 2px 4px; height: 22px; border-radius: 2px; border: 1px solid var(--accent); background: var(--surface2); color: var(--text); outline: none; font-family: var(--font-sans);" />
+  `;
+  
+  const input = document.getElementById(`rename-input-${chatId}`);
+  input.focus();
+  input.select();
+  
+  input.addEventListener("click", (e) => e.stopPropagation());
+  
+  const finishRename = () => {
+    const val = input.value.trim();
+    if (val && val !== currentTitle) {
+      renameAiChat(chatId, val);
+    } else {
+      renderAiChatHistory();
+    }
+  };
+  
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      finishRename();
+    } else if (e.key === "Escape") {
+      renderAiChatHistory();
+    }
+  });
+  
+  input.addEventListener("blur", finishRename);
+}
+
+function saveCurrentChatState(userText = null) {
+  if (!currentChatId) return;
+  const chat = aiChats.find(c => c.id === currentChatId);
+  if (chat) {
+    chat.messages = [...aiMessages];
+    if (userText && (chat.title === "New Chat" || chat.title === "Diagnostic Scan")) {
+      chat.title = userText.length > 25 ? userText.substring(0, 25) + "..." : userText;
+    }
+    saveAiChatsToStorage();
+  }
+}
+
 function toggleAiSidebar(reason = "User initiated manual troubleshooting") {
   const isOpening = !sidebarAi.classList.contains("active");
-  document.querySelectorAll(".sidebar").forEach(s => s.classList.remove("active"));
+  closeAllSidebars();
   if (isOpening) {
     sidebarAi.classList.add("active");
-    if (aiMessages.length === 0) {
-      if (reason.includes("Status panel") || reason.includes("failure")) {
-        startAiDiagnostic(reason);
-      } else {
-        // Welcome message for general AI chat
-        aiMessages = [];
-        aiChatMessages.innerHTML = "";
-        appendAiMessage("AI Assistant", "Hello! I am RemoteLink AI, your general AI assistant. Ask me anything, or check 'Attach current screen' to analyze what's currently on your display.", "ai-msg");
+    document.body.classList.add("sidebar-open");
+    
+    if (reason.includes("Status panel") || reason.includes("failure")) {
+      startNewAiChat("Diagnostic Scan");
+      startAiDiagnostic(reason);
+    } else {
+      if (!currentChatId) {
+        if (aiChats.length > 0) {
+          loadAiChat(aiChats[0].id);
+        } else {
+          startNewAiChat();
+        }
       }
+      showAiActiveChatView();
     }
   }
 }
@@ -1416,8 +1685,59 @@ if (btnFloatingAi) {
   btnFloatingAi.addEventListener("click", () => toggleAiSidebar("Floating AI button click"));
 }
 
+if (btnViewerAi) {
+  btnViewerAi.addEventListener("click", () => toggleAiSidebar("Viewer toolbar AI button click"));
+}
+
+if (btnHostAi) {
+  btnHostAi.addEventListener("click", () => toggleAiSidebar("Host toolbar AI button click"));
+}
+
+// Global click-outside listener to close active sidebar
+document.addEventListener("click", (e) => {
+  const activeSidebar = document.querySelector(".sidebar.active");
+  if (!activeSidebar) return;
+
+  const isInsideSidebar = e.target.closest(".sidebar");
+  const isToggleButton = e.target.closest("#btn-host-chat, #btn-viewer-chat, #btn-viewer-files, #btn-viewer-ai, #btn-host-ai, #btn-floating-ai, #btn-troubleshoot-ai, .btn-sidebar-ai-switch");
+
+  if (!isInsideSidebar && !isToggleButton) {
+    closeAllSidebars();
+  }
+});
+
+// Escape key listener to close sidebars
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeAllSidebars();
+  }
+});
+
+if (btnNewAiChat) {
+  btnNewAiChat.addEventListener("click", () => startNewAiChat());
+}
+
+if (btnAiChatHistory) {
+  btnAiChatHistory.addEventListener("click", () => {
+    const isHistoryVisible = aiChatHistoryContainer.style.display === "flex";
+    if (isHistoryVisible) {
+      showAiActiveChatView();
+    } else {
+      showAiHistoryView();
+    }
+  });
+}
+
 if (aiChatForm) {
   aiChatForm.addEventListener("submit", sendAiChatMessage);
+}
+
+// Initial storage load and binding
+loadAiChatsFromStorage();
+if (aiChats.length > 0) {
+  loadAiChat(aiChats[0].id);
+} else {
+  startNewAiChat();
 }
 
 async function startAiDiagnostic(failureReason) {
@@ -1439,6 +1759,7 @@ async function startAiDiagnostic(failureReason) {
     aiChatMessages.innerHTML = "";
     appendAiMessage("AI Assistant", responseText, "ai-msg");
     aiMessages.push({ role: "assistant", content: responseText });
+    saveCurrentChatState();
   } catch (err) {
     aiChatMessages.innerHTML = "";
     appendAiMessage("AI Assistant", `Diagnostic analysis failed: ${err.message}. Please check if the signaling server is running.`, "ai-msg");
@@ -1452,19 +1773,19 @@ async function sendAiChatMessage(e) {
   
   aiChatInput.value = "";
   
-  // Check if screenshot is requested
   const includeScreenCheckbox = document.getElementById("ai-include-screen");
   const shouldAttachScreen = includeScreenCheckbox && includeScreenCheckbox.checked;
   
   let screenshotBase64 = null;
   if (shouldAttachScreen) {
     screenshotBase64 = await captureCurrentScreen();
-    if (includeScreenCheckbox) includeScreenCheckbox.checked = false; // Reset checkbox
+    if (includeScreenCheckbox) includeScreenCheckbox.checked = false;
   }
   
   const imgUrl = screenshotBase64 ? `data:image/jpeg;base64,${screenshotBase64}` : null;
   appendAiMessage("You", userText, "user-msg", imgUrl);
   aiMessages.push({ role: "user", content: userText });
+  saveCurrentChatState(userText);
   
   const typingEl = appendAiMessage("AI Assistant", "Thinking...", "ai-msg typing-msg");
   
@@ -1475,6 +1796,7 @@ async function sendAiChatMessage(e) {
     typingEl.remove();
     appendAiMessage("AI Assistant", responseText, "ai-msg");
     aiMessages.push({ role: "assistant", content: responseText });
+    saveCurrentChatState();
   } catch (err) {
     typingEl.remove();
     appendAiMessage("AI Assistant", `Failed to get response: ${err.message}`, "ai-msg");

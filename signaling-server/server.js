@@ -46,7 +46,7 @@ const httpServer = http.createServer((req, res) => {
   }
 
   if (req.url === "/health") {
-    res.writeHead(200, { 
+    res.writeHead(200, {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*"
     });
@@ -102,7 +102,7 @@ ${JSON.stringify(diagnostics, null, 2)}
           }
         }
 
-        const modelToUse = hasImage ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.1-8b-instant";
+        const modelToUse = hasImage ? "qwen/qwen3.6-27b" : "llama-3.1-8b-instant";
 
         const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
